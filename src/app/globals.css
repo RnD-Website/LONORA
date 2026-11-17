@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import "./components.css" layer(components);
+
+/*
+ * Display face: the reference (for-living.it) uses PP Fragment Glare, a
+ * commercial font from Pangram Pangram. Once a licence is purchased, drop
+ * PPFragment-GlareRegular.woff2 into /public/fonts and uncomment below —
+ * it takes priority automatically. Until then Marcellus (free) stands in.
+ *
+ * @font-face {
+ *   font-family: "PP Fragment Glare";
+ *   src: url("/fonts/PPFragment-GlareRegular.woff2") format("woff2");
+ *   font-display: swap;
+ * }
+ */
+
+@theme {
+  --color-espresso: #17110d;
+  --color-night: #0c0907;
+  --color-ink: #212121;
+  --color-cream: #f2e8d4;
+  --color-bone: #f6f2ea;
+  --color-mist: #f4f4f4;
+  --color-sage: #d0d5d2;
+  --color-olive: #313729;
+  /* Brand primary */
+  --color-terracotta: #361414;
+  --color-stone: #8a8178;
+
+  --font-sans: var(--font-instrument), "Helvetica Neue", Arial, sans-serif;
+  --font-display: "PP Fragment Glare", var(--font-marcellus), Georgia, serif;
+  --font-hand: var(--font-hand-script), cursive;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+:root {
+  --gutter: clamp(16px, 3vw, 48px);
+  --header-h: 76px;
+}
+
+@layer base {
+html {
+  background: var(--color-espresso);
+  color: var(--color-bone);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15.2px;
+  line-height: 1.55;
+  background: var(--color-espresso);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-terracotta);
+  color: var(--color-bone);
+}
+
+
+}
+
