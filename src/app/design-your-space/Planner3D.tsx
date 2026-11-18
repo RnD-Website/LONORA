@@ -1,28 +1,26 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Edges, Html, OrbitControls, RoundedBox } from "@react-three/drei";
+import { Edges, OrbitControls, RoundedBox } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
-  ARCH,
-  BACK,
-  FEATURE_SPAN,
-  FIREPLACE_Z,
+  ARCH_SIZE,
   FLOORS,
   FURN,
-  LEFT,
-  ROOM,
   STONES,
   UPHOLSTERY,
   WALLS,
   WINDOW,
-  WINDOW_Z,
   WOODS,
+  archX,
   clampToRoom,
+  featureSpan,
   find,
   finishOf,
+  windowZs,
+  type Dims,
   type FloorKind,
   type Item,
   type LightId,
@@ -30,15 +28,29 @@ import {
 } from "./catalog";
 
 export type CameraView = "front" | "corner" | "plan";
+export type SceneRoom = {
+  id: string;
+  name: string;
+  dims: Dims;
+  style: Style;
+  items: Item[];
+  offset: [number, number];
+};
 
 const ORANGE = "#FF6325";
 const LINE = "#3a3532";
 const BRONZE = "#3a3027";
 const LINEN = "#F3EEE5";
+const CUT_H = 1.05; // wall height in the whole-floor (cutaway) view
 
 type V3 = [number, number, number];
-type Ctx = { drawing: boolean; evening: boolean };
-const SceneCtx = createContext<Ctx>({ drawing: false, evening: false });
+type Ctx = { drawing: boolean; evening: boolean; cut: boolean };
+const SceneCtx = createContext<Ctx>({
+  drawing: false,
+  evening: false,
+  cut: false,
+});
+const DimCtx = createContext<Dims>({ w: 5.2, d: 4.4, h: 2.9 });
 
 /* ============================================================ Textures == */
 
@@ -53,10 +65,10 @@ function rng(seed: number) {
 }
 const tone = (hex: string, l: number, s = 0) => "#" + new THREE.Color(hex).offsetHSL(0, s, l).getHexString();
 
-/** Procedural floor: 2 m × 2 m tile drawn on a canvas. */
-function floorTexture(kind: FloorKind, base: string) {
+/** Procedural floor: a 2 m × 2 m tile drawn on a canvas. */
+function drawFloor(kind: FloorKind, base: string) {
   const S = 1024;
-  const px = S / 2; // pixels per metre
+  const px = S / 2;
   const c = document.createElement("canvas");
   c.width = c.height = S;
   const g = c.getContext("2d")!;
@@ -72,15 +84,14 @@ function floorTexture(kind: FloorKind, base: string) {
     g.globalAlpha = 0.07;
     g.strokeStyle = tone(base, -0.18);
     g.lineWidth = 1;
-    const n = 6;
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k < 6; k++) {
       g.beginPath();
       if (horizontal) {
-        const yy = y + ((k + r()) / n) * h;
+        const yy = y + ((k + r()) / 6) * h;
         g.moveTo(x, yy);
         g.bezierCurveTo(x + w * 0.3, yy + (r() - 0.5) * 6, x + w * 0.7, yy + (r() - 0.5) * 6, x + w, yy);
       } else {
-        const xx = x + ((k + r()) / n) * w;
+        const xx = x + ((k + r()) / 6) * w;
         g.moveTo(xx, y);
         g.bezierCurveTo(xx + (r() - 0.5) * 6, y + h * 0.3, xx + (r() - 0.5) * 6, y + h * 0.7, xx, y + h);
       }
@@ -122,7 +133,7 @@ function floorTexture(kind: FloorKind, base: string) {
       g.strokeRect(x, y, w, h);
       g.globalAlpha = 1;
     };
-    // Lattice (W, W) × (L, −L) tiles one horizontal + one vertical plank.
+    // Lattice (W, W) × (L, −L) tiles one horizontal and one vertical plank.
     for (let j = -4; j < S / L + 6; j++) {
       for (let i = -Math.ceil((S + L * 6) / W); i < Math.ceil((S + L * 6) / W); i++) {
         const ox = i * W + j * L;
@@ -171,16 +182,22 @@ function floorTexture(kind: FloorKind, base: string) {
     }
     g.globalAlpha = 1;
   }
+  return c;
+}
 
-  const tex = new THREE.CanvasTexture(c);
+const floorCanvases = new Map<string, HTMLCanvasElement>();
+function floorTexture(kind: FloorKind, base: string, dims: Dims) {
+  const key = kind + base;
+  if (!floorCanvases.has(key)) floorCanvases.set(key, drawFloor(kind, base));
+  const tex = new THREE.CanvasTexture(floorCanvases.get(key)!);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(ROOM.w / 2, ROOM.d / 2);
+  tex.repeat.set(dims.w / 2, dims.d / 2);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
 }
 
-/** Soft, mottled greyscale used to give walls a lime-plaster feel. */
+/** Soft, mottled greyscale that gives walls a lime-plaster feel. */
 function plasterTexture() {
   const S = 512;
   const c = document.createElement("canvas");
@@ -206,20 +223,11 @@ function plasterTexture() {
 
 /* ============================================================== Helpers == */
 
-function Mat({ c, r = 0.75, m = 0, glow, map }: { c: string; r?: number; m?: number; glow?: string; map?: THREE.Texture }) {
+function Mat({ c, r = 0.75, m = 0, glow }: { c: string; r?: number; m?: number; glow?: string }) {
   const { drawing, evening } = useContext(SceneCtx);
   if (drawing) return <meshBasicMaterial color="#f2efe9" />;
   const on = Boolean(glow && evening);
-  return (
-    <meshStandardMaterial
-      color={c}
-      roughness={r}
-      metalness={m}
-      map={map ?? null}
-      emissive={on ? glow : "#000000"}
-      emissiveIntensity={on ? 1.7 : 0}
-    />
-  );
+  return <meshStandardMaterial color={c} roughness={r} metalness={m} emissive={on ? glow : "#000000"} emissiveIntensity={on ? 1.7 : 0} />;
 }
 
 function Ed({ t = 25 }: { t?: number }) {
@@ -243,9 +251,8 @@ function RB({ s, p, c, rad = 0.05, rot, r = 0.95 }: { s: V3; p: V3; c: string; r
   // Line drawings read better with crisp boxes than rounded ones.
   if (drawing) return <B s={s} p={p} c={c} rot={rot} />;
   return (
-    <RoundedBox args={s} radius={rad} smoothness={3} position={p} rotation={rot} castShadow={!drawing} receiveShadow={!drawing}>
+    <RoundedBox args={s} radius={rad} smoothness={3} position={p} rotation={rot} castShadow receiveShadow>
       <Mat c={c} r={r} />
-      <Ed t={20} />
     </RoundedBox>
   );
 }
@@ -258,7 +265,15 @@ function Cyl({
   m,
   glow,
   rot,
-}: { a: [number, number, number, number?]; p: V3; c: string; r?: number; m?: number; glow?: string; rot?: V3 }) {
+}: {
+  a: [number, number, number, number?];
+  p: V3;
+  c: string;
+  r?: number;
+  m?: number;
+  glow?: string;
+  rot?: V3;
+}) {
   const { drawing } = useContext(SceneCtx);
   return (
     <mesh position={p} rotation={rot} castShadow={!drawing} receiveShadow={!drawing}>
@@ -270,8 +285,8 @@ function Cyl({
 }
 
 function Glow({ p, intensity = 2.4, distance = 4 }: { p: V3; intensity?: number; distance?: number }) {
-  const { drawing, evening } = useContext(SceneCtx);
-  if (!evening || drawing) return null;
+  const { drawing, evening, cut } = useContext(SceneCtx);
+  if (!evening || drawing || cut) return null;
   return <pointLight position={p} intensity={intensity} distance={distance} decay={1.6} color="#ffb877" />;
 }
 
@@ -431,6 +446,86 @@ function Bed({ up }: Fin) {
   );
 }
 
+/** Kitchen run along a wall: base cabinets, stone worktop and splashback, sink, hob, wall cabinets and a shelf. */
+function KitchenRun({ wood, stone }: Fin) {
+  const w = 3.0;
+  const d = 0.62;
+  const n = 6;
+  const fw = w / n;
+  const back = -d / 2;
+  return (
+    <group>
+      <B s={[w - 0.04, 0.1, d - 0.08]} p={[0, 0.05, -0.02]} c="#3a332d" />
+      <B s={[w, 0.76, d - 0.04]} p={[0, 0.48, -0.02]} c={tone(wood, -0.06)} />
+      {Array.from({ length: n }).map((_, i) => (
+        <group key={i}>
+          <B s={[fw - 0.006, 0.74, 0.02]} p={[-w / 2 + fw / 2 + i * fw, 0.48, d / 2 - 0.02]} c={wood} r={0.55} />
+          <B s={[0.22, 0.012, 0.016]} p={[-w / 2 + fw / 2 + i * fw, 0.8, d / 2 + 0.002]} c={BRONZE} m={0.6} r={0.4} />
+        </group>
+      ))}
+      <B s={[w + 0.02, 0.04, d + 0.02]} p={[0, 0.88, 0]} c={stone} r={0.35} />
+      <B s={[w, 0.56, 0.015]} p={[0, 1.18, back + 0.008]} c={stone} r={0.4} />
+      {/* Sink and tap */}
+      <B s={[0.6, 0.006, 0.42]} p={[0.55, 0.903, 0.02]} c="#9fa3a6" m={0.85} r={0.3} />
+      <Cyl a={[0.013, 0.016, 0.34]} p={[0.55, 1.07, back + 0.08]} c="#1a1a1a" m={0.5} r={0.35} />
+      <Cyl a={[0.011, 0.011, 0.19]} p={[0.55, 1.235, back + 0.17]} c="#1a1a1a" m={0.5} r={0.35} rot={[Math.PI / 2, 0, 0]} />
+      {/* Induction hob */}
+      <B s={[0.6, 0.006, 0.5]} p={[-0.85, 0.903, 0]} c="#111112" r={0.15} m={0.3} />
+      {/* Wall cabinets with a hood between, and an open shelf */}
+      <B s={[1.3, 0.72, 0.35]} p={[-0.85, 1.86, back + 0.175]} c={tone(wood, -0.06)} />
+      <B s={[0.64, 0.7, 0.02]} p={[-1.17, 1.86, back + 0.36]} c={wood} r={0.55} />
+      <B s={[0.64, 0.7, 0.02]} p={[-0.53, 1.86, back + 0.36]} c={wood} r={0.55} />
+      <B s={[1.4, 0.04, 0.26]} p={[0.75, 1.62, back + 0.13]} c={wood} r={0.55} />
+      <Cyl a={[0.06, 0.07, 0.2]} p={[0.35, 1.74, back + 0.13]} c="#ece5d9" r={0.5} />
+      <Cyl a={[0.08, 0.08, 0.1]} p={[0.62, 1.69, back + 0.13]} c="#b47a5c" r={0.6} />
+      <B s={[0.3, 0.2, 0.03]} p={[1.1, 1.74, back + 0.04]} c="#d8cdbd" />
+    </group>
+  );
+}
+
+function Island({ wood, stone }: Fin) {
+  const z = -0.25;
+  return (
+    <group>
+      <B s={[2.1, 0.86, 0.9]} p={[0, 0.43, z]} c={wood} r={0.55} />
+      <B s={[2.2, 0.04, 1.0]} p={[0, 0.88, z]} c={stone} r={0.35} />
+      <B s={[0.04, 0.88, 1.0]} p={[-1.1, 0.44, z]} c={stone} r={0.35} />
+      <B s={[0.04, 0.88, 1.0]} p={[1.1, 0.44, z]} c={stone} r={0.35} />
+      {[-0.65, 0, 0.65].map((x) => (
+        <group key={x} position={[x, 0, 0.5]}>
+          <Cyl a={[0.19, 0.19, 0.05]} p={[0, 0.7, 0]} c={wood} r={0.5} />
+          {[
+            [-1, -1],
+            [1, -1],
+            [-1, 1],
+            [1, 1],
+          ].map(([sx, sz], i) => (
+            <Cyl key={i} a={[0.011, 0.011, 0.68, 8]} p={[sx * 0.11, 0.34, sz * 0.11]} c={BRONZE} m={0.6} r={0.4} />
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function Pantry({ wood }: Fin) {
+  return (
+    <group>
+      <B s={[1.16, 0.1, 0.56]} p={[0, 0.05, -0.02]} c="#3a332d" />
+      <B s={[1.2, 2.2, 0.58]} p={[0, 1.2, -0.02]} c={tone(wood, -0.06)} />
+      <B s={[0.59, 1.08, 0.02]} p={[-0.3, 0.65, 0.29]} c={wood} r={0.55} />
+      <B s={[0.59, 1.1, 0.02]} p={[-0.3, 1.75, 0.29]} c={wood} r={0.55} />
+      <B s={[0.59, 0.5, 0.02]} p={[0.3, 0.36, 0.29]} c={wood} r={0.55} />
+      <B s={[0.59, 0.62, 0.02]} p={[0.3, 0.93, 0.29]} c={BRONZE} m={0.5} r={0.35} />
+      <B s={[0.5, 0.38, 0.01]} p={[0.3, 0.9, 0.305]} c="#0d0d0e" r={0.12} m={0.4} />
+      <B s={[0.59, 1.04, 0.02]} p={[0.3, 1.77, 0.29]} c={wood} r={0.55} />
+      {[-0.03, 0.03].map((x) => (
+        <B key={x} s={[0.012, 0.3, 0.016]} p={[x, 1.2, 0.305]} c={BRONZE} m={0.6} r={0.4} />
+      ))}
+    </group>
+  );
+}
+
 function FloorLamp({ stone }: Fin) {
   return (
     <group>
@@ -443,11 +538,13 @@ function FloorLamp({ stone }: Fin) {
 }
 
 function Pendant() {
+  const { cut } = useContext(SceneCtx);
+  const H = useContext(DimCtx).h;
   const y = 1.66;
   return (
     <group>
-      <Cyl a={[0.005, 0.005, ROOM.h - y]} p={[0, (ROOM.h + y) / 2, 0]} c={BRONZE} />
-      <mesh position={[0, y, 0]} castShadow={false}>
+      {!cut && <Cyl a={[0.005, 0.005, H - y]} p={[0, (H + y) / 2, 0]} c={BRONZE} />}
+      <mesh position={[0, y, 0]}>
         <sphereGeometry args={[0.25, 32, 24]} />
         <Mat c={LINEN} r={0.9} glow="#ffd29a" />
         <Ed t={8} />
@@ -478,7 +575,11 @@ function Olive() {
       {leaves.map(([x, y, z, s], i) => (
         <mesh key={i} position={[x, y, z]} castShadow={!drawing}>
           <icosahedronGeometry args={[s, 1]} />
-          {drawing ? <meshBasicMaterial color="#f2efe9" /> : <meshStandardMaterial color={i % 2 ? "#6f7b55" : "#7d8862"} roughness={0.9} flatShading />}
+          {drawing ? (
+            <meshBasicMaterial color="#f2efe9" />
+          ) : (
+            <meshStandardMaterial color={i % 2 ? "#6f7b55" : "#7d8862"} roughness={0.9} flatShading />
+          )}
           <Ed t={30} />
         </mesh>
       ))}
@@ -507,6 +608,9 @@ const MODELS = {
   shelf: Shelf,
   nightstand: Nightstand,
   bed: Bed,
+  kitchen: KitchenRun,
+  island: Island,
+  pantry: Pantry,
   floorlamp: FloorLamp,
   pendant: Pendant,
   olive: Olive,
@@ -521,17 +625,20 @@ const hit = new THREE.Vector3();
 function Piece({
   item,
   style,
+  offset,
   selected,
   onSelect,
   onMove,
 }: {
   item: Item;
   style: Style;
+  offset: [number, number];
   selected: boolean;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, z: number) => void;
 }) {
   const def = FURN[item.type];
+  const dims = useContext(DimCtx);
   const get = useThree((s) => s.get);
   const setOrbit = (on: boolean) => {
     const c = get().controls as OrbitControlsImpl | null;
@@ -550,7 +657,11 @@ function Piece({
   const down = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     onSelect(item.id);
-    if (e.ray.intersectPlane(floorPlane, hit)) drag.current = { dx: hit.x - item.x, dz: hit.z - item.z };
+    if (e.ray.intersectPlane(floorPlane, hit))
+      drag.current = {
+        dx: hit.x - offset[0] - item.x,
+        dz: hit.z - offset[1] - item.z,
+      };
     (e.target as Element).setPointerCapture?.(e.pointerId);
     setOrbit(false);
     document.body.style.cursor = "grabbing";
@@ -558,7 +669,7 @@ function Piece({
   const move = (e: ThreeEvent<PointerEvent>) => {
     if (!drag.current) return;
     if (!e.ray.intersectPlane(floorPlane, hit)) return;
-    const p = clampToRoom(item.type, hit.x - drag.current.dx, hit.z - drag.current.dz);
+    const p = clampToRoom(item.type, hit.x - offset[0] - drag.current.dx, hit.z - offset[1] - drag.current.dz, dims, item.rot);
     onMove(item.id, p.x, p.z);
   };
   const up = (e: ThreeEvent<PointerEvent>) => {
@@ -609,74 +720,79 @@ function Piece({
           ))}
         </group>
       )}
-      {selected && (
-        <Html position={[0, Math.min(def.h, 2.2) + 0.25, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-          <span className="whitespace-nowrap rounded-full bg-terracotta px-2.5 py-1 text-[11px] font-medium text-white shadow">
-            {def.name}
-          </span>
-        </Html>
-      )}
     </group>
   );
 }
 
 /* ================================================================ Room == */
 
-function useWallMaterialProps(color: string, plaster: THREE.Texture) {
-  return { color, map: plaster };
-}
-
-function WallMesh({ geo, color, plaster, position, rotation }: { geo: THREE.BufferGeometry; color: string; plaster: THREE.Texture; position: V3; rotation: V3 }) {
+function WallMesh({
+  geo,
+  color,
+  plaster,
+  position,
+  rotation,
+}: {
+  geo: THREE.BufferGeometry;
+  color: string;
+  plaster: THREE.Texture;
+  position: V3;
+  rotation: V3;
+}) {
   const { drawing } = useContext(SceneCtx);
-  const props = useWallMaterialProps(color, plaster);
   return (
     <mesh geometry={geo} position={position} rotation={rotation} receiveShadow={!drawing} castShadow={!drawing}>
       {drawing ? (
         <meshBasicMaterial color="#ffffff" side={THREE.FrontSide} />
       ) : (
-        <meshStandardMaterial {...props} roughness={0.95} side={THREE.FrontSide} shadowSide={THREE.DoubleSide} />
+        <meshStandardMaterial color={color} map={plaster} roughness={0.95} side={THREE.FrontSide} shadowSide={THREE.DoubleSide} />
       )}
       {drawing && <Edges color={LINE} threshold={10} />}
     </mesh>
   );
 }
 
-function Room({ style, plaster, floorTex }: { style: Style; plaster: THREE.Texture; floorTex: THREE.Texture }) {
-  const { drawing, evening } = useContext(SceneCtx);
+function rectShape(x0: number, x1: number, h: number) {
+  const s = new THREE.Shape();
+  s.moveTo(x0, -0.05);
+  s.lineTo(x1, -0.05);
+  s.lineTo(x1, h);
+  s.lineTo(x0, h);
+  s.closePath();
+  return s;
+}
+
+function Room({ style, plaster }: { style: Style; plaster: THREE.Texture }) {
+  const { drawing, evening, cut } = useContext(SceneCtx);
+  const dims = useContext(DimCtx);
+  const { w, d, h: H } = dims;
+  const BACK = -d / 2;
+  const LEFT = -w / 2;
   const wall = find(WALLS, style.walls).color;
   const floor = find(FLOORS, style.floor);
-  const H = ROOM.h;
+  const floorTex = useMemo(() => floorTexture(floor.kind, floor.color, dims), [floor.kind, floor.color, dims]);
+  useEffect(() => () => floorTex.dispose(), [floorTex]);
+  const ax = archX(dims);
+  const winZ = windowZs(style.window, dims);
 
   const backGeo = useMemo(() => {
-    const s = new THREE.Shape();
-    s.moveTo(LEFT, -0.05);
-    s.lineTo(-LEFT, -0.05);
-    s.lineTo(-LEFT, H);
-    s.lineTo(LEFT, H);
-    s.closePath();
+    const s = rectShape(LEFT, -LEFT, H);
     if (style.back === "arch") {
-      const { cx, w, h } = ARCH;
-      const spring = h - w / 2;
+      const spring = ARCH_SIZE.h - ARCH_SIZE.w / 2;
       const hole = new THREE.Path();
-      hole.moveTo(cx - w / 2, 0);
-      hole.lineTo(cx - w / 2, spring);
-      hole.absarc(cx, spring, w / 2, Math.PI, 0, true);
-      hole.lineTo(cx + w / 2, 0);
+      hole.moveTo(ax - ARCH_SIZE.w / 2, 0);
+      hole.lineTo(ax - ARCH_SIZE.w / 2, spring);
+      hole.absarc(ax, spring, ARCH_SIZE.w / 2, Math.PI, 0, true);
+      hole.lineTo(ax + ARCH_SIZE.w / 2, 0);
       hole.closePath();
       s.holes.push(hole);
     }
     return new THREE.ShapeGeometry(s, 24);
-  }, [style.back, H]);
+  }, [style.back, LEFT, H, ax]);
 
   const leftGeo = useMemo(() => {
-    const D = ROOM.d;
-    const s = new THREE.Shape();
-    s.moveTo(-D / 2, -0.05);
-    s.lineTo(D / 2, -0.05);
-    s.lineTo(D / 2, H);
-    s.lineTo(-D / 2, H);
-    s.closePath();
-    for (const z of WINDOW_Z[style.window]) {
+    const s = rectShape(-d / 2, d / 2, H);
+    for (const z of winZ) {
       const lx = -z;
       const hole = new THREE.Path();
       hole.moveTo(lx - WINDOW.w / 2, WINDOW.y0);
@@ -687,49 +803,67 @@ function Room({ style, plaster, floorTex }: { style: Style; plaster: THREE.Textu
       s.holes.push(hole);
     }
     return new THREE.ShapeGeometry(s);
-  }, [style.window, H]);
+  }, [winZ, d, H]);
 
-  const rightGeo = useMemo(() => {
-    const D = ROOM.d;
-    const s = new THREE.Shape();
-    s.moveTo(-D / 2, -0.05);
-    s.lineTo(D / 2, -0.05);
-    s.lineTo(D / 2, H);
-    s.lineTo(-D / 2, H);
-    s.closePath();
-    return new THREE.ShapeGeometry(s);
-  }, [H]);
+  const rightGeo = useMemo(() => new THREE.ShapeGeometry(rectShape(-d / 2, d / 2, H)), [d, H]);
 
-  const floorKind = floor.kind;
+  const floorMesh = (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={!drawing}>
+      <planeGeometry args={[w, d]} />
+      {drawing ? (
+        <meshBasicMaterial color="#ffffff" />
+      ) : (
+        <meshStandardMaterial map={floorTex} roughness={floor.kind === "terrazzo" ? 0.35 : floor.kind === "tiles" ? 0.55 : 0.62} />
+      )}
+      {drawing && <Edges color={LINE} />}
+    </mesh>
+  );
+
+  // Whole-floor view: low cutaway walls on all four sides, like an architect's model.
+  if (cut) {
+    const t = 0.12;
+    const walls: [number, number, number, number][] = [
+      [0, BACK + t / 2, w, t],
+      [0, -BACK - t / 2, w, t],
+      [LEFT + t / 2, 0, t, d],
+      [-LEFT - t / 2, 0, t, d],
+    ];
+    return (
+      <group>
+        {floorMesh}
+        {walls.map(([x, z, sx, sz], i) => (
+          <group key={i}>
+            <mesh position={[x, CUT_H / 2, z]} castShadow={!drawing} receiveShadow={!drawing}>
+              <boxGeometry args={[sx, CUT_H, sz]} />
+              {drawing ? <meshBasicMaterial color="#ffffff" /> : <meshStandardMaterial color={wall} map={plaster} roughness={0.95} />}
+              {drawing && <Edges color={LINE} />}
+            </mesh>
+            <mesh position={[x, CUT_H + 0.003, z]}>
+              <boxGeometry args={[sx, 0.006, sz]} />
+              <meshBasicMaterial color={drawing ? LINE : "#2b2420"} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+    );
+  }
+
   return (
     <group>
-      {/* Floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={!drawing}>
-        <planeGeometry args={[ROOM.w, ROOM.d]} />
-        {drawing ? (
-          <meshBasicMaterial color="#ffffff" />
-        ) : (
-          <meshStandardMaterial map={floorTex} roughness={floorKind === "terrazzo" ? 0.35 : floorKind === "tiles" ? 0.55 : 0.62} />
-        )}
-        {drawing && <Edges color={LINE} />}
-      </mesh>
-
+      {floorMesh}
       <WallMesh geo={backGeo} color={wall} plaster={plaster} position={[0, 0, BACK]} rotation={[0, 0, 0]} />
       <WallMesh geo={leftGeo} color={wall} plaster={plaster} position={[LEFT, 0, 0]} rotation={[0, Math.PI / 2, 0]} />
       <WallMesh geo={rightGeo} color={wall} plaster={plaster} position={[-LEFT, 0, 0]} rotation={[0, -Math.PI / 2, 0]} />
-
-      {/* Skirting in the wall colour, slightly deeper */}
       {!drawing && (
         <>
-          <B s={[ROOM.w, 0.08, 0.015]} p={[0, 0.04, BACK + 0.0075]} c={tone(wall, -0.04)} />
-          <B s={[0.015, 0.08, ROOM.d]} p={[-LEFT - 0.0075, 0.04, 0]} c={tone(wall, -0.04)} />
+          <B s={[w, 0.08, 0.015]} p={[0, 0.04, BACK + 0.0075]} c={tone(wall, -0.04)} />
+          <B s={[0.015, 0.08, d]} p={[-LEFT - 0.0075, 0.04, 0]} c={tone(wall, -0.04)} />
         </>
       )}
-
       {style.back === "arch" && <ArchPassage wall={wall} floorTex={floorTex} plaster={plaster} evening={evening} />}
       {style.back === "slats" && <Slats wood={find(WOODS, style.wood).color} />}
       {style.back === "fluted" && <Fluting wall={wall} />}
-      {WINDOW_Z[style.window].map((z) => (
+      {winZ.map((z) => (
         <WindowUnit key={z} z={z} wall={wall} stone={find(STONES, style.stone).color} />
       ))}
       {style.fireplace && <Fireplace wall={wall} stone={find(STONES, style.stone).color} plaster={plaster} />}
@@ -737,16 +871,32 @@ function Room({ style, plaster, floorTex }: { style: Style; plaster: THREE.Textu
   );
 }
 
-function ArchPassage({ wall, floorTex, plaster, evening }: { wall: string; floorTex: THREE.Texture; plaster: THREE.Texture; evening: boolean }) {
+function ArchPassage({
+  wall,
+  floorTex,
+  plaster,
+  evening,
+}: {
+  wall: string;
+  floorTex: THREE.Texture;
+  plaster: THREE.Texture;
+  evening: boolean;
+}) {
   const { drawing } = useContext(SceneCtx);
-  const { cx, w, h } = ARCH;
+  const dims = useContext(DimCtx);
+  const cx = archX(dims);
+  const { w, h } = ARCH_SIZE;
   const depth = 1.7;
   const spring = h - w / 2;
   const deep = tone(wall, -0.07);
   const mat = (c: string, side: THREE.Side = THREE.FrontSide) =>
-    drawing ? <meshBasicMaterial color="#ffffff" side={side} /> : <meshStandardMaterial color={c} map={plaster} roughness={0.95} side={side} />;
+    drawing ? (
+      <meshBasicMaterial color="#ffffff" side={side} />
+    ) : (
+      <meshStandardMaterial color={c} map={plaster} roughness={0.95} side={side} />
+    );
   return (
-    <group position={[cx, 0, BACK - depth / 2]}>
+    <group position={[cx, 0, -dims.d / 2 - depth / 2]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]} receiveShadow>
         <planeGeometry args={[w, depth]} />
         {drawing ? <meshBasicMaterial color="#fff" /> : <meshStandardMaterial map={floorTex} roughness={0.6} />}
@@ -769,7 +919,6 @@ function ArchPassage({ wall, floorTex, plaster, evening }: { wall: string; floor
         <planeGeometry args={[w, h]} />
         {mat(tone(wall, -0.1))}
       </mesh>
-      {/* A small console and vessel at the end of the passage */}
       <B s={[0.7, 0.04, 0.28]} p={[0, 0.82, -depth / 2 + 0.16]} c={tone(wall, -0.18)} />
       <Cyl a={[0.08, 0.11, 0.36]} p={[0.1, 1.02, -depth / 2 + 0.16]} c="#b5775a" r={0.7} />
       {!drawing && <pointLight position={[0, 2.0, -0.2]} intensity={evening ? 2.6 : 0.8} distance={3} decay={1.6} color="#ffcf9c" />}
@@ -778,30 +927,33 @@ function ArchPassage({ wall, floorTex, plaster, evening }: { wall: string; floor
 }
 
 function Slats({ wood }: { wood: string }) {
-  const [a, b] = FEATURE_SPAN;
+  const dims = useContext(DimCtx);
+  const [a, b] = featureSpan(dims);
   const pitch = 0.09;
   const n = Math.floor((b - a) / pitch);
+  const BACK = -dims.d / 2;
   return (
     <group>
       {Array.from({ length: n }).map((_, i) => (
-        <B key={i} s={[0.045, ROOM.h, 0.035]} p={[a + pitch / 2 + i * pitch, ROOM.h / 2, BACK + 0.03]} c={wood} r={0.6} />
+        <B key={i} s={[0.045, dims.h, 0.035]} p={[a + pitch / 2 + i * pitch, dims.h / 2, BACK + 0.03]} c={wood} r={0.6} />
       ))}
-      <B s={[b - a, ROOM.h, 0.01]} p={[(a + b) / 2, ROOM.h / 2, BACK + 0.006]} c={tone(wood, -0.25)} />
+      <B s={[b - a, dims.h, 0.01]} p={[(a + b) / 2, dims.h / 2, BACK + 0.006]} c={tone(wood, -0.25)} />
     </group>
   );
 }
 
 function Fluting({ wall }: { wall: string }) {
   const { drawing } = useContext(SceneCtx);
-  const [a, b] = FEATURE_SPAN;
+  const dims = useContext(DimCtx);
+  const [a, b] = featureSpan(dims);
   const r = 0.042;
   const n = Math.floor((b - a) / (r * 2));
   const c = tone(wall, 0.02);
   return (
     <group>
       {Array.from({ length: n }).map((_, i) => (
-        <mesh key={i} position={[a + r + i * r * 2, ROOM.h / 2, BACK]} castShadow={!drawing} receiveShadow={!drawing}>
-          <cylinderGeometry args={[r, r, ROOM.h, 14, 1, false, -Math.PI / 2, Math.PI]} />
+        <mesh key={i} position={[a + r + i * r * 2, dims.h / 2, -dims.d / 2]} castShadow={!drawing} receiveShadow={!drawing}>
+          <cylinderGeometry args={[r, r, dims.h, 14, 1, false, -Math.PI / 2, Math.PI]} />
           {drawing ? <meshBasicMaterial color="#fff" /> : <meshStandardMaterial color={c} roughness={0.9} />}
           {drawing && i % 3 === 0 && <Edges color={LINE} threshold={60} />}
         </mesh>
@@ -811,6 +963,7 @@ function Fluting({ wall }: { wall: string }) {
 }
 
 function WindowUnit({ z, wall, stone }: { z: number; wall: string; stone: string }) {
+  const LEFT = -useContext(DimCtx).w / 2;
   const { w, y0, y1 } = WINDOW;
   const h = y1 - y0;
   const deep = 0.24;
@@ -818,19 +971,16 @@ function WindowUnit({ z, wall, stone }: { z: number; wall: string; stone: string
   const fx = LEFT - deep + 0.04;
   return (
     <group>
-      {/* Reveals */}
       <B s={[deep, 0.02, w]} p={[x, y0 - 0.01, z]} c={wall} />
       <B s={[deep, 0.02, w]} p={[x, y1 + 0.01, z]} c={wall} />
       <B s={[deep, h, 0.02]} p={[x, (y0 + y1) / 2, z - w / 2 - 0.01]} c={wall} />
       <B s={[deep, h, 0.02]} p={[x, (y0 + y1) / 2, z + w / 2 + 0.01]} c={wall} />
-      {/* Slim bronze frame with a transom */}
       <B s={[0.04, h, 0.04]} p={[fx, (y0 + y1) / 2, z]} c={BRONZE} m={0.5} r={0.4} />
       <B s={[0.04, 0.04, w]} p={[fx, y1 - 0.5, z]} c={BRONZE} m={0.5} r={0.4} />
       <B s={[0.04, 0.05, w]} p={[fx, y0 + 0.025, z]} c={BRONZE} m={0.5} r={0.4} />
       <B s={[0.04, 0.05, w]} p={[fx, y1 - 0.025, z]} c={BRONZE} m={0.5} r={0.4} />
       <B s={[0.04, h, 0.04]} p={[fx, (y0 + y1) / 2, z - w / 2 + 0.02]} c={BRONZE} m={0.5} r={0.4} />
       <B s={[0.04, h, 0.04]} p={[fx, (y0 + y1) / 2, z + w / 2 - 0.02]} c={BRONZE} m={0.5} r={0.4} />
-      {/* Stone sill */}
       <B s={[0.12, 0.03, w + 0.1]} p={[LEFT + 0.04, y0 - 0.015, z]} c={stone} r={0.45} />
     </group>
   );
@@ -838,16 +988,17 @@ function WindowUnit({ z, wall, stone }: { z: number; wall: string; stone: string
 
 function Fireplace({ wall, stone, plaster }: { wall: string; stone: string; plaster: THREE.Texture }) {
   const { drawing, evening } = useContext(SceneCtx);
-  const R = -LEFT;
+  const dims = useContext(DimCtx);
+  const R = dims.w / 2;
   const depth = 0.4;
   const fire = useRef<THREE.PointLight>(null);
   useFrame(({ clock }) => {
     if (fire.current) fire.current.intensity = 2.4 + Math.sin(clock.elapsedTime * 9) * 0.35 + Math.sin(clock.elapsedTime * 23) * 0.25;
   });
   return (
-    <group position={[0, 0, FIREPLACE_Z]}>
-      <mesh position={[R - depth / 2, ROOM.h / 2, 0]} castShadow={!drawing} receiveShadow={!drawing}>
-        <boxGeometry args={[depth, ROOM.h, 1.7]} />
+    <group position={[0, 0, 0.2]}>
+      <mesh position={[R - depth / 2, dims.h / 2, 0]} castShadow={!drawing} receiveShadow={!drawing}>
+        <boxGeometry args={[depth, dims.h, 1.7]} />
         {drawing ? <meshBasicMaterial color="#fff" /> : <meshStandardMaterial color={wall} map={plaster} roughness={0.95} />}
         <Ed />
       </mesh>
@@ -863,7 +1014,6 @@ function Fireplace({ wall, stone, plaster }: { wall: string; stone: string; plas
       )}
       <B s={[0.62, 0.06, 1.9]} p={[R - 0.31, 0.03, 0]} c={stone} r={0.45} />
       <B s={[0.2, 0.06, 1.8]} p={[R - depth - 0.09, 1.18, 0]} c={stone} r={0.45} />
-      {/* Artwork above the mantel */}
       <B s={[0.03, 0.82, 0.62]} p={[R - depth - 0.015, 1.86, 0]} c="#efe8dc" />
       <B s={[0.032, 0.6, 0.42]} p={[R - depth - 0.016, 1.86, 0]} c="#c28e6e" r={0.9} />
       <Cyl a={[0.05, 0.07, 0.26]} p={[R - depth - 0.09, 1.34, -0.55]} c="#ece5d9" r={0.5} />
@@ -873,46 +1023,87 @@ function Fireplace({ wall, stone, plaster }: { wall: string; stone: string; plas
 
 /* ================================================================ Light == */
 
-const SUN: Record<LightId, { color: string; intensity: number; sky: string; hemi: number; hemiSky: string; hemiGround: string; bg: string; exposure: number }> = {
-  morning: { color: "#fff3e2", intensity: 3.4, sky: "#dfeaf3", hemi: 1.15, hemiSky: "#f5f2ec", hemiGround: "#cbbfae", bg: "#f4f1eb", exposure: 1.1 },
-  golden: { color: "#ffb36b", intensity: 4.2, sky: "#f6c590", hemi: 0.9, hemiSky: "#ffe4c4", hemiGround: "#b39a80", bg: "#f3e7d8", exposure: 1.05 },
-  evening: { color: "#9db1d8", intensity: 0.35, sky: "#26324b", hemi: 0.32, hemiSky: "#8394b8", hemiGround: "#3a2e26", bg: "#1a1614", exposure: 1.2 },
+const SUN: Record<
+  LightId,
+  {
+    color: string;
+    intensity: number;
+    sky: string;
+    hemi: number;
+    hemiSky: string;
+    hemiGround: string;
+    bg: string;
+    exposure: number;
+  }
+> = {
+  morning: {
+    color: "#fff3e2",
+    intensity: 3.4,
+    sky: "#dfeaf3",
+    hemi: 1.15,
+    hemiSky: "#f5f2ec",
+    hemiGround: "#cbbfae",
+    bg: "#f4f1eb",
+    exposure: 1.1,
+  },
+  golden: {
+    color: "#ffb36b",
+    intensity: 4.2,
+    sky: "#f6c590",
+    hemi: 0.9,
+    hemiSky: "#ffe4c4",
+    hemiGround: "#b39a80",
+    bg: "#f3e7d8",
+    exposure: 1.05,
+  },
+  evening: {
+    color: "#9db1d8",
+    intensity: 0.35,
+    sky: "#26324b",
+    hemi: 0.32,
+    hemiSky: "#8394b8",
+    hemiGround: "#3a2e26",
+    bg: "#1a1614",
+    exposure: 1.2,
+  },
 };
 
-function Lights({ style }: { style: Style }) {
+function Lights({ light, windows, dims, overview }: { light: LightId; windows: boolean; dims: Dims; overview: boolean }) {
   const { drawing } = useContext(SceneCtx);
-  const sun = SUN[style.light];
-  const hasWindow = style.window !== "none";
+  const sun = SUN[light];
   const exposure = drawing ? 1 : sun.exposure;
   useFrame((state) => {
     state.gl.toneMappingExposure += (exposure - state.gl.toneMappingExposure) * 0.1;
   });
-  // With windows the sun comes through them (low, from the left); otherwise over the open side.
-  const pos: V3 = hasWindow ? (style.light === "golden" ? [-8, 3.4, 1.2] : [-7, 6.4, 1.8]) : [-3, 7, 6];
   if (drawing) return <ambientLight intensity={1} />;
+  // In a single room with windows the sun comes through them from the left;
+  // otherwise it falls from above the open side.
+  const throughWindow = windows && !overview;
+  const pos: V3 = throughWindow ? (light === "golden" ? [-8, 3.4, 1.2] : [-7, 6.4, 1.8]) : overview ? [-6, 12, 8] : [-3, 7, 6];
+  const ext = overview ? 14 : 6;
+  const evening = light === "evening";
   return (
     <>
-      <hemisphereLight args={[sun.hemiSky, sun.hemiGround, sun.hemi]} />
-      <ambientLight intensity={style.light === "evening" ? 0.12 : 0.28} />
+      <hemisphereLight args={[sun.hemiSky, sun.hemiGround, overview && evening ? 0.8 : sun.hemi]} />
+      <ambientLight intensity={evening ? (overview ? 0.35 : 0.12) : 0.28} />
       <directionalLight
         position={pos}
-        intensity={sun.intensity}
+        intensity={overview && evening ? 0.9 : sun.intensity}
         color={sun.color}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0003}
         shadow-normalBias={0.02}
         shadow-camera-near={0.5}
-        shadow-camera-far={30}
-        shadow-camera-left={-6}
-        shadow-camera-right={6}
-        shadow-camera-top={6}
-        shadow-camera-bottom={-6}
+        shadow-camera-far={40}
+        shadow-camera-left={-ext}
+        shadow-camera-right={ext}
+        shadow-camera-top={ext}
+        shadow-camera-bottom={-ext}
       />
-      {/* Sky seen through the windows */}
-      {hasWindow && (
-        <mesh position={[LEFT - 0.6, ROOM.h / 2, -0.3]} rotation={[0, Math.PI / 2, 0]}>
-          <planeGeometry args={[3.8, ROOM.h + 0.6]} />
+      {throughWindow && (
+        <mesh position={[-dims.w / 2 - 0.6, dims.h / 2, -0.3]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[dims.d - 0.6, dims.h + 0.6]} />
           <meshBasicMaterial color={sun.sky} toneMapped={false} />
         </mesh>
       )}
@@ -922,22 +1113,20 @@ function Lights({ style }: { style: Style }) {
 
 /* =============================================================== Camera == */
 
-const VIEWS: Record<CameraView, { pos: V3; target: V3 }> = {
-  front: { pos: [0, 1.75, 7.4], target: [0, 1.1, -0.6] },
-  corner: { pos: [4.7, 3.0, 5.4], target: [-0.4, 0.9, -0.6] },
-  plan: { pos: [0, 10.5, 0.35], target: [0, 0, -0.1] },
-};
+type Shot = { pos: V3; target: V3 };
+type Views = Record<CameraView, Shot>;
 
-function Rig({ view, nonce }: { view: CameraView; nonce: number }) {
+function Rig({ views, view, nonce }: { views: Views; view: CameraView; nonce: string }) {
   const controls = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
-  const goal = useRef<(typeof VIEWS)[CameraView] | null>(VIEWS.front);
+  const goal = useRef<Shot | null>(views[view]);
   const vPos = useMemo(() => new THREE.Vector3(), []);
   const vTarget = useMemo(() => new THREE.Vector3(), []);
 
   useEffect(() => {
-    goal.current = VIEWS[view];
-  }, [view, nonce]);
+    goal.current = views[view];
+    // `nonce` changes whenever the framing should be re-applied.
+  }, [views, view, nonce]);
 
   useEffect(() => {
     const c = controls.current;
@@ -955,7 +1144,11 @@ function Rig({ view, nonce }: { view: CameraView; nonce: number }) {
     vTarget.set(...g.target);
     const aspect = (camera as THREE.PerspectiveCamera).aspect || 1.6;
     const pull = Math.max(1, 1.1 / aspect);
-    vPos.set(...g.pos).sub(vTarget).multiplyScalar(pull).add(vTarget);
+    vPos
+      .set(...g.pos)
+      .sub(vTarget)
+      .multiplyScalar(pull)
+      .add(vTarget);
     camera.position.lerp(vPos, k);
     c.target.lerp(vTarget, k);
     c.update();
@@ -969,84 +1162,303 @@ function Rig({ view, nonce }: { view: CameraView; nonce: number }) {
       enableDamping
       dampingFactor={0.08}
       minDistance={2.5}
-      maxDistance={20}
+      maxDistance={45}
       minPolarAngle={0.02}
       maxPolarAngle={Math.PI / 2 - 0.05}
-      minAzimuthAngle={-1.3}
-      maxAzimuthAngle={1.3}
-      target={VIEWS.front.target}
+      target={views.front.target}
     />
   );
 }
 
+function roomViews(d: Dims): Views {
+  return {
+    front: {
+      pos: [0, 1.75, d.d / 2 + d.w * 0.85 + 0.8],
+      target: [0, 1.1, -d.d * 0.14],
+    },
+    corner: {
+      pos: [d.w * 0.9, 3.0, d.d / 2 + 3.2],
+      target: [-d.w * 0.08, 0.9, -d.d * 0.14],
+    },
+    plan: { pos: [0, Math.max(d.w, d.d) * 2.05, 0.35], target: [0, 0, -0.1] },
+  };
+}
+
+function floorViews(b: { cx: number; cz: number; W: number; D: number }): Views {
+  const ext = Math.max(b.W, b.D) * 1.2;
+  const t: V3 = [b.cx, 0, b.cz];
+  return {
+    front: { pos: [b.cx, ext * 0.75, b.cz + ext * 1.3], target: t },
+    corner: { pos: [b.cx + ext * 0.62, ext * 0.95, b.cz + ext * 1.0], target: t },
+    plan: { pos: [b.cx, ext * 1.75, b.cz + 0.3], target: t },
+  };
+}
+
 /* ================================================================ Scene == */
 
-function Dimensions() {
-  const tag = "whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-ink/70 shadow-sm";
+function RoomBlock({
+  room,
+  plaster,
+  current,
+  overview,
+  selected,
+  onSelect,
+  onMove,
+}: {
+  room: SceneRoom;
+  plaster: THREE.Texture;
+  current: boolean;
+  overview: boolean;
+  selected: string | null;
+  onSelect: (id: string | null, roomId?: string) => void;
+  onMove: (roomId: string, id: string, x: number, z: number) => void;
+}) {
+  const offset: [number, number] = overview ? room.offset : [0, 0];
+  const d = room.dims;
   return (
-    <>
-      <Html position={[0, 0, ROOM.d / 2 + 0.2]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-        <span className={tag}>{Math.round(ROOM.w * 1000)} mm</span>
-      </Html>
-      <Html position={[-LEFT + 0.25, 0, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-        <span className={tag}>{Math.round(ROOM.d * 1000)} mm</span>
-      </Html>
-      <Html position={[LEFT, ROOM.h + 0.15, BACK]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-        <span className={tag}>h {Math.round(ROOM.h * 1000)}</span>
-      </Html>
-    </>
+    <DimCtx.Provider value={d}>
+      <group position={[offset[0], 0, offset[1]]}>
+        <Room style={room.style} plaster={plaster} />
+        {room.items.map((it) => (
+          <Piece
+            key={it.id}
+            item={it}
+            style={room.style}
+            offset={offset}
+            selected={selected === it.id}
+            onSelect={(id) => onSelect(id, room.id)}
+            onMove={(id, x, z) => onMove(room.id, id, x, z)}
+          />
+        ))}
+        {/* Orange outline on the floor marks the room being edited */}
+        {overview &&
+          current &&
+          (
+            [
+              [0, -d.d / 2 + 0.17, d.w - 0.34, 0.04],
+              [0, d.d / 2 - 0.17, d.w - 0.34, 0.04],
+              [-d.w / 2 + 0.17, 0, 0.04, d.d - 0.34],
+              [d.w / 2 - 0.17, 0, 0.04, d.d - 0.34],
+            ] as const
+          ).map(([x, z, sx, sz], i) => (
+            <mesh key={i} position={[x, 0.025, z]}>
+              <boxGeometry args={[sx, 0.004, sz]} />
+              <meshBasicMaterial color={ORANGE} toneMapped={false} />
+            </mesh>
+          ))}
+      </group>
+    </DimCtx.Provider>
   );
 }
 
+/* =============================================================== Labels == */
+
+// Screen labels are plain DOM nodes positioned each frame from 3D points.
+type LabelSpec = {
+  key: string;
+  pos: V3;
+  node: React.ReactNode;
+  interactive?: boolean;
+};
+const projected = new THREE.Vector3();
+
+function Projector({ specs, lookup }: { specs: LabelSpec[]; lookup: (key: string) => HTMLDivElement | null }) {
+  useFrame(({ camera, size }) => {
+    for (const s of specs) {
+      const el = lookup(s.key);
+      if (!el) continue;
+      projected.set(...s.pos).project(camera);
+      const visible = projected.z < 1 && Math.abs(projected.x) < 1.2 && Math.abs(projected.y) < 1.2;
+      el.style.visibility = visible ? "visible" : "hidden";
+      el.style.transform = `translate(${((projected.x + 1) / 2) * size.width}px, ${((1 - projected.y) / 2) * size.height}px) translate(-50%, -50%)`;
+    }
+  });
+  return null;
+}
+
 export default function Planner3D({
-  items,
-  style,
+  rooms,
+  focus,
+  current,
+  light,
   drawing,
   view,
   viewNonce,
   selected,
   onSelect,
   onMove,
+  onFocusRoom,
   onReady,
 }: {
-  items: Item[];
-  style: Style;
+  rooms: SceneRoom[];
+  focus: string | null;
+  current: string;
+  light: LightId;
   drawing: boolean;
   view: CameraView;
   viewNonce: number;
   selected: string | null;
-  onSelect: (id: string | null) => void;
-  onMove: (id: string, x: number, z: number) => void;
+  onSelect: (id: string | null, roomId?: string) => void;
+  onMove: (roomId: string, id: string, x: number, z: number) => void;
+  onFocusRoom: (roomId: string) => void;
   onReady?: (canvas: HTMLCanvasElement) => void;
 }) {
-  const floor = find(FLOORS, style.floor);
-  const floorTex = useMemo(() => floorTexture(floor.kind, floor.color), [floor.kind, floor.color]);
   const plaster = useMemo(() => plasterTexture(), []);
-  useEffect(() => () => floorTex.dispose(), [floorTex]);
+  const overview = focus === null;
+  const focused = rooms.find((r) => r.id === focus) ?? rooms[0];
+  const shown = useMemo(() => (overview ? rooms : [focused]), [overview, rooms, focused]);
+  const ctx = useMemo<Ctx>(() => ({ drawing, evening: light === "evening", cut: overview }), [drawing, light, overview]);
+  const sun = SUN[light];
 
-  const ctx = useMemo<Ctx>(() => ({ drawing, evening: style.light === "evening" }), [drawing, style.light]);
-  const sun = SUN[style.light];
+  // Bounds of the whole floor, for framing and the base slab.
+  const bounds = useMemo(() => {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const r of rooms) {
+      x0 = Math.min(x0, r.offset[0] - r.dims.w / 2);
+      x1 = Math.max(x1, r.offset[0] + r.dims.w / 2);
+      z0 = Math.min(z0, r.offset[1] - r.dims.d / 2);
+      z1 = Math.max(z1, r.offset[1] + r.dims.d / 2);
+    }
+    return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, W: x1 - x0, D: z1 - z0 };
+  }, [rooms]);
+
+  const fd = focused.dims;
+  const views = useMemo(() => (overview ? floorViews(bounds) : roomViews(fd)), [overview, bounds, fd]);
+  const frameKey = `${overview ? "floor" : focused.id}-${viewNonce}`;
+  const start = roomViews(fd).front.pos;
+
+  const labelRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const lookup = useCallback((key: string) => labelRefs.current[key] ?? null, []);
+  const specs = useMemo<LabelSpec[]>(() => {
+    const out: LabelSpec[] = [];
+    const tag = "whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-ink/70 shadow-sm";
+    for (const r of shown) {
+      const [ox, oz] = overview ? r.offset : [0, 0];
+      const it = r.items.find((i) => i.id === selected);
+      if (it) {
+        out.push({
+          key: `sel-${it.id}`,
+          pos: [ox + it.x, Math.min(FURN[it.type].h, 2.2) + 0.25, oz + it.z],
+          node: (
+            <span className="whitespace-nowrap rounded-full bg-terracotta px-2.5 py-1 text-[11px] font-medium text-white shadow">
+              {FURN[it.type].name}
+            </span>
+          ),
+        });
+      }
+      if (overview) {
+        const area = (r.dims.w * r.dims.d).toFixed(1);
+        const isCurrent = r.id === current;
+        out.push({
+          key: `room-${r.id}`,
+          pos: [ox - r.dims.w / 2 + 1.0, CUT_H + 0.25, oz + r.dims.d / 2 - 0.3],
+          interactive: true,
+          node: (
+            <button
+              type="button"
+              onClick={() => onFocusRoom(r.id)}
+              className={`group flex items-center gap-2 whitespace-nowrap rounded-full py-1 pl-3 pr-1 text-[11.5px] shadow-md transition-colors ${
+                isCurrent ? "bg-terracotta text-white" : "bg-white text-ink hover:bg-ink hover:text-bone"
+              }`}
+            >
+              <span className="font-medium">{r.name}</span>
+              <span className="opacity-60">{area} m²</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10.5px] ${isCurrent ? "bg-white/20" : "bg-ink/10 group-hover:bg-white/15"}`}>
+                Open
+              </span>
+            </button>
+          ),
+        });
+      } else if (drawing) {
+        const d = r.dims;
+        out.push({
+          key: "dim-w",
+          pos: [0, 0, d.d / 2 + 0.2],
+          node: <span className={tag}>{Math.round(d.w * 1000)} mm</span>,
+        });
+        out.push({
+          key: "dim-d",
+          pos: [d.w / 2 + 0.25, 0, 0],
+          node: <span className={tag}>{Math.round(d.d * 1000)} mm</span>,
+        });
+        out.push({
+          key: "dim-h",
+          pos: [-d.w / 2, d.h + 0.15, -d.d / 2],
+          node: <span className={tag}>h {Math.round(d.h * 1000)}</span>,
+        });
+      }
+    }
+    return out;
+  }, [shown, overview, selected, current, drawing, onFocusRoom]);
 
   return (
-    <Canvas
-      className="!absolute inset-0"
-      shadows
-      dpr={[1, 1.75]}
-      camera={{ position: VIEWS.front.pos, fov: 38, near: 0.05, far: 80 }}
-      gl={{ antialias: true, preserveDrawingBuffer: true, toneMapping: THREE.ACESFilmicToneMapping }}
-      onCreated={({ gl }) => onReady?.(gl.domElement)}
-      onPointerMissed={() => onSelect(null)}
-    >
-      <SceneCtx.Provider value={ctx}>
-        <color attach="background" args={[drawing ? "#ffffff" : sun.bg]} />
-        <Lights style={style} />
-        <Room style={style} plaster={plaster} floorTex={floorTex} />
-        {items.map((it) => (
-          <Piece key={it.id} item={it} style={style} selected={selected === it.id} onSelect={onSelect} onMove={onMove} />
+    <>
+      <Canvas
+        className="!absolute inset-0"
+        style={{
+          // Dotted drafting-paper backdrop (14.8 px grid, matching the studio's dot pattern).
+          backgroundColor: drawing ? "#ffffff" : sun.bg,
+          backgroundImage: `radial-gradient(circle, ${light === "evening" && !drawing ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} 1.3px, transparent 1.45px)`,
+          backgroundSize: "14.82px 14.82px",
+        }}
+        shadows
+        dpr={[1, 1.75]}
+        camera={{ position: start, fov: 38, near: 0.05, far: 120 }}
+        gl={{
+          antialias: true,
+          alpha: true,
+          preserveDrawingBuffer: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+        }}
+        onCreated={({ gl }) => onReady?.(gl.domElement)}
+        onPointerMissed={() => onSelect(null)}
+      >
+        <SceneCtx.Provider value={ctx}>
+          <Lights light={light} windows={!overview && focused.style.window !== "none"} dims={fd} overview={overview} />
+          {overview && (
+            <mesh position={[bounds.cx, -0.03, bounds.cz]} receiveShadow={!drawing}>
+              <boxGeometry args={[bounds.W + 0.8, 0.05, bounds.D + 0.8]} />
+              {drawing ? (
+                <meshBasicMaterial color="#ffffff" />
+              ) : (
+                <meshStandardMaterial color={light === "evening" ? "#2a2421" : "#e6dfd3"} roughness={0.9} />
+              )}
+              {drawing && <Edges color={LINE} />}
+            </mesh>
+          )}
+          {shown.map((r) => (
+            <RoomBlock
+              key={r.id}
+              room={r}
+              plaster={plaster}
+              current={r.id === current}
+              overview={overview}
+              selected={selected}
+              onSelect={onSelect}
+              onMove={onMove}
+            />
+          ))}
+          <Rig views={views} view={view} nonce={frameKey} />
+          <Projector specs={specs} lookup={lookup} />
+        </SceneCtx.Provider>
+      </Canvas>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {specs.map((s) => (
+          <div
+            key={s.key}
+            ref={(el) => {
+              labelRefs.current[s.key] = el;
+            }}
+            className={`absolute left-0 top-0 ${s.interactive ? "pointer-events-auto" : ""}`}
+            style={{ visibility: "hidden" }}
+          >
+            {s.node}
+          </div>
         ))}
-        {drawing && <Dimensions />}
-        <Rig view={view} nonce={viewNonce} />
-      </SceneCtx.Provider>
-    </Canvas>
+      </div>
+    </>
   );
 }
