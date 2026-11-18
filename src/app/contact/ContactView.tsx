@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { contact, projects, services } from "@/lib/content";
+import { contact, services } from "@/lib/content";
 import { SplitReveal } from "@/components/Reveal";
-import RoomView from "@/components/three/RoomView";
 import Faq from "@/components/Faq";
 
 const BUDGETS = ["Under $50k", "$50k – $150k", "$150k – $500k", "$500k +", "Not sure yet"];
@@ -54,7 +53,17 @@ export default function ContactView() {
               Share a few details and we will reply within two working days to arrange a first conversation.
             </p>
             <div className="relative mt-12 hidden aspect-[4/3] overflow-hidden rounded-[18px] lg:block">
-              <RoomView preset={projects[2].room} shot={0} mode="look" standalone />
+              <video
+                className="absolute inset-0 h-full w-full object-cover"
+                src="/video/lonora-team.mp4"
+                poster="/video/lonora-team-poster.jpg"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-label="The LONORA team reviewing floor plans together"
+              />
             </div>
             <dl className="mt-10 grid grid-cols-2 gap-6 text-[14px]">
               <div>
@@ -93,8 +102,24 @@ export default function ContactView() {
                 </p>
               </div>
             ) : (
-              <form onSubmit={onSubmit} className="space-y-8" noValidate={false}>
-                <fieldset>
+              <form
+                onSubmit={onSubmit}
+                noValidate={false}
+                className="relative isolate space-y-8 overflow-hidden rounded-[26px] bg-[#311414] p-7 shadow-[0_40px_90px_-40px_rgba(255,99,37,0.35)] ring-1 ring-inset ring-white/10 md:p-10"
+              >
+                {/* Warm accent glow and header so the form reads as the focus of the page */}
+                <span aria-hidden className="pointer-events-none absolute -right-24 -top-24 -z-10 h-64 w-64 rounded-full bg-terracotta/25 blur-3xl" />
+                <div className="relative flex items-center justify-between gap-4 border-b border-white/10 pb-6">
+                  <div>
+                    <p className="display text-[clamp(1.5rem,2.2vw,2rem)] leading-none">Start a project</p>
+                    <p className="mt-2 text-[13.5px] text-white/55">Takes about two minutes. We reply within two working days.</p>
+                  </div>
+                  <span className="hidden shrink-0 items-center gap-2 rounded-full bg-terracotta/15 px-3 py-1.5 text-[11.5px] uppercase tracking-[0.14em] text-terracotta sm:flex">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-terracotta" />
+                    Booking now
+                  </span>
+                </div>
+                <fieldset className="relative">
                   <legend className="eyebrow mb-4 text-white/50">I&apos;m interested in</legend>
                   <div className="flex flex-wrap gap-2">
                     {services.map((s) => (

@@ -27,16 +27,18 @@ const PRINCIPLES = [
 ];
 
 // A long strip of studio and project imagery that drifts sideways as you scroll.
-const STRIP = [
-  projects[0].images[3],
+// Entries are photo ids/paths, or a { video } clip of the studio at work.
+type StripItem = string | { video: string; poster: string; label: string };
+const STRIP: StripItem[] = [
+  { video: "/video/lonora-team.mp4", poster: "/video/lonora-team-poster.jpg", label: "The LONORA team reviewing floor plans together" },
   projects[2].images[1],
   projects[5].images[2],
-  projects[1].images[4],
+  "/images/about-model-review.jpg",
   projects[7].images[1],
-  projects[3].images[2],
+  { video: "/video/about-architect.mp4", poster: "/video/about-architect-poster.jpg", label: "An architect drawing at the studio" },
   projects[6].images[3],
   projects[9].images[1],
-  projects[4].images[3],
+  "/images/about-architect-drawing.jpg",
   projects[8].images[2],
 ];
 
@@ -116,9 +118,23 @@ export default function StudioView() {
       {/* Image strip */}
       <section data-strip-wrap className="relative overflow-hidden pb-28 md:pb-40">
         <div data-strip className="flex w-max gap-3 pr-3 md:gap-4 md:pr-4">
-          {[...STRIP, ...STRIP].map((id, i) => (
-            <div key={i} aria-hidden={i >= STRIP.length || undefined} className="aspect-[21/20] w-[56vw] shrink-0 overflow-hidden rounded-[18px] sm:w-[32vw] md:w-[20vw]">
-              <Photo id={id} alt="" sizes="(min-width: 768px) 20vw, 56vw" />
+          {[...STRIP, ...STRIP].map((item, i) => (
+            <div key={i} aria-hidden={i >= STRIP.length || undefined} className="relative aspect-[21/20] w-[56vw] shrink-0 overflow-hidden rounded-[18px] sm:w-[32vw] md:w-[20vw]">
+              {typeof item === "string" ? (
+                <Photo id={item} alt="" sizes="(min-width: 768px) 20vw, 56vw" />
+              ) : (
+                <video
+                  className="absolute inset-0 h-full w-full object-cover"
+                  src={item.video}
+                  poster={item.poster}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  aria-label={item.label}
+                />
+              )}
             </div>
           ))}
         </div>
