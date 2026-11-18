@@ -133,7 +133,15 @@ export default function Header() {
             onLight ? "glass-light" : "glass"
           }`}
         >
-          {nav.map((item) => (
+          {nav.map((item) =>
+            item.href === null ? (
+              <span
+                key={item.label}
+                className={`cursor-default rounded-full px-4 py-2 text-[13.5px] transition-colors duration-500 ${onLight ? "text-ink/65" : "text-white/70"}`}
+              >
+                {item.label}
+              </span>
+            ) : (
             <TLink
               key={item.href}
               href={item.href}
@@ -149,7 +157,8 @@ export default function Header() {
             >
               {item.label}
             </TLink>
-          ))}
+            ),
+          )}
         </nav>
 
         <div className="flex items-center gap-2">
@@ -188,10 +197,16 @@ export default function Header() {
       >
         <nav className="flex flex-col gap-2">
           {[...nav, { label: "Contact", href: "/contact" }].map((item) => (
-            <div key={item.href} className="overflow-hidden">
-              <TLink href={item.href} data-menu-item className="display block text-[13vw] text-cream">
-                {item.label}
-              </TLink>
+            <div key={item.label} className="overflow-hidden">
+              {item.href === null ? (
+                <span data-menu-item className="display block text-[13vw] text-cream">
+                  {item.label}
+                </span>
+              ) : (
+                <TLink href={item.href} data-menu-item className="display block text-[13vw] text-cream">
+                  {item.label}
+                </TLink>
+              )}
             </div>
           ))}
         </nav>

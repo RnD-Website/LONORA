@@ -64,10 +64,14 @@ export default function Footer() {
             <p className="eyebrow mb-4 text-white/40">Studio</p>
             <ul className="space-y-2">
               {nav.map((n) => (
-                <li key={n.href}>
-                  <TLink href={n.href} className="link-line">
-                    {n.label}
-                  </TLink>
+                <li key={n.label}>
+                  {n.href === null ? (
+                    <span>{n.label}</span>
+                  ) : (
+                    <TLink href={n.href} className="link-line">
+                      {n.label}
+                    </TLink>
+                  )}
                 </li>
               ))}
               <li>

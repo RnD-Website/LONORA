@@ -28,11 +28,13 @@ export const contact = {
   ],
 };
 
-export const nav = [
+// `href: null` marks a menu label whose page is not built yet (shown as plain text).
+export const nav: { label: string; href: string | null }[] = [
   { label: "Work", href: "/projects" },
   { label: "Services", href: "/services" },
   { label: "About Us", href: "/studio" },
   { label: "Journal", href: "/journal" },
+  { label: "Design Your Space", href: "/design-your-space" },
 ];
 
 /* -------------------------------------------------------------------------- */
