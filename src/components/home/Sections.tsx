@@ -82,8 +82,7 @@ export function Manifesto() {
                   className="transition-transform duration-[1.4s] ease-[var(--ease-out-expo)] group-hover:scale-[1.06]"
                 />
               </div>
-              <span className="mt-7 block text-[12px] tracking-[0.18em] text-ink/45">0{i + 1}</span>
-              <h3 className="display mt-3 text-[clamp(1.5rem,2.2vw,2.1rem)] leading-tight">{p.t}</h3>
+              <h3 className="display mt-7 text-[clamp(1.5rem,2.2vw,2.1rem)] leading-tight">{p.t}</h3>
               <p className="mx-auto mt-3 max-w-[300px] text-[15px] leading-relaxed text-ink/60">{p.d}</p>
             </article>
           ))}
