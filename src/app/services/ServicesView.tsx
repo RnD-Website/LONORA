@@ -108,9 +108,11 @@ export default function ServicesView() {
                   <p data-reveal className="mt-6 max-w-[540px] text-[16.5px] leading-relaxed text-ink/70">
                     {s.description}
                   </p>
-                  <ul data-reveal className="mt-8 flex max-w-[560px] flex-wrap gap-2">
+                  <p data-reveal className="mt-8 text-[11.5px] uppercase tracking-[0.16em] text-ink/45">What&apos;s included</p>
+                  <ul data-reveal className="mt-3 grid max-w-[560px] gap-x-8 gap-y-2.5 sm:grid-cols-2">
                     {s.deliverables.map((d) => (
-                      <li key={d} className="rounded-full border border-ink/15 px-4 py-2 text-[13.5px]">
+                      <li key={d} className="flex items-baseline gap-3 text-[15px] text-ink/80">
+                        <span aria-hidden className="text-terracotta">—</span>
                         {d}
                       </li>
                     ))}

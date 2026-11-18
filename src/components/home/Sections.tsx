@@ -205,6 +205,9 @@ export function ServicesList() {
             <br />
             one studio.
           </h2>
+          <TLink href="/services" className="btn btn-ghost pointer-events-auto mt-9">
+            Explore all
+          </TLink>
         </div>
         <p data-svc-side className="absolute left-[var(--gutter)] top-[52vh] max-w-[19vw] text-[14px] leading-relaxed text-white/70">
           We begin with how a space should work, refine how it should feel, and carry every decision through to the last detail on site.
@@ -222,6 +225,11 @@ export function ServicesList() {
           {services.map((s, i) => (
             <ServiceCard key={s.slug} s={s} i={i} className={i % 2 === 1 ? "translate-y-10" : ""} />
           ))}
+        </div>
+        <div className="mt-20 text-center">
+          <TLink href="/services" className="btn btn-ghost-ink">
+            Explore all
+          </TLink>
         </div>
       </div>
     </section>
