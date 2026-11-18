@@ -2,13 +2,31 @@
 
 import { useEffect, useRef } from "react";
 import { posts, projects, services } from "@/lib/content";
-import { gsap, SplitText, useGSAP, prefersReducedMotion, scrollState } from "@/lib/gsap";
+import { gsap, SplitText, useGSAP, prefersReducedMotion } from "@/lib/gsap";
 import { RevealGroup, SplitReveal } from "../Reveal";
 import { TLink } from "../Transition";
-import ProjectCard from "../ProjectCard";
 import { Photo } from "../Photo";
 
 /* ---------------------------------------------------------------- Manifesto -- */
+
+const PILLARS = [
+  { t: "Light first", d: "Every plan begins with a study of where the sun falls, hour by hour.", img: () => projects[0].images[2] },
+  { t: "Fewer, finer materials", d: "Three or four materials, used generously, for calm and lasting rooms.", img: () => projects[6].images[5] },
+  { t: "Seen before built", d: "Real-time 3D lets you walk your space before a wall is moved.", img: () => projects[1].images[0] },
+];
+
+/** Small rounded photo set inline with the statement, like a word. */
+function Chip({ id }: { id: string }) {
+  return (
+    <span
+      data-chip
+      aria-hidden
+      className="relative mx-[0.12em] inline-block h-[0.78em] w-[1.7em] -translate-y-[0.06em] overflow-hidden rounded-full align-middle"
+    >
+      <Photo id={id} alt="" sizes="160px" />
+    </span>
+  );
+}
 
 export function Manifesto() {
   const ref = useRef<HTMLElement>(null);
@@ -26,98 +44,50 @@ export function Manifesto() {
           scrollTrigger: { trigger: "[data-words]", start: "top 80%", end: "bottom 45%", scrub: true },
         },
       );
+      gsap.fromTo(
+        "[data-chip]",
+        { scale: 0.2, opacity: 0 },
+        {
+          scale: 1,
+          opacity: 1,
+          stagger: 0.15,
+          ease: "back.out(1.6)",
+          duration: 0.9,
+          scrollTrigger: { trigger: "[data-words]", start: "top 75%", once: true },
+        },
+      );
       return () => split.revert();
     },
     { scope: ref },
   );
 
   return (
-    <section ref={ref} className="relative bg-cream py-32 text-ink md:py-44">
-      <div className="wrap grid gap-10 md:grid-cols-12">
-        <p className="eyebrow md:col-span-3">The studio</p>
-        <div className="md:col-span-9">
-          <p data-words className="display display-md leading-[1.08]">
-            We design interiors the way architects design buildings: starting with light, proportion and the way people move,
-            then refining every surface until the space feels inevitable.
-          </p>
-          <RevealGroup className="mt-14 grid gap-8 sm:grid-cols-3">
-            {[
-              ["Light first", "Every plan begins with a study of where the sun falls, hour by hour."],
-              ["Fewer, finer materials", "Three or four materials, used generously, for calm and lasting rooms."],
-              ["Seen before built", "Real-time 3D lets you walk your space before a wall is moved."],
-            ].map(([t, d], i) => (
-              <div key={t} data-reveal data-delay={i * 0.1} className="border-t border-ink/15 pt-5">
-                <p className="text-[17px] font-medium">{t}</p>
-                <p className="mt-2 text-[14.5px] text-ink/60">{d}</p>
+    <section ref={ref} className="relative bg-cream py-28 text-ink md:py-40">
+      <div className="wrap">
+
+        <p data-words className="display mx-auto max-w-[22ch] text-center text-[clamp(2rem,4.6vw,4.6rem)] leading-[1.04]">
+          Interiors <Chip id={projects[2].images[0]} /> designed like architecture. Calm, considered{" "}
+          <Chip id={projects[8].images[0]} /> and built to last <Chip id={projects[4].images[1]} />
+        </p>
+
+        <RevealGroup className="mt-20 grid gap-14 md:mt-28 md:grid-cols-3 md:gap-8">
+          {PILLARS.map((p, i) => (
+            <article key={p.t} data-reveal data-delay={i * 0.1} className={`group text-center ${i === 1 ? "md:mt-20" : ""}`}>
+              {/* Arched frame: a doorway motif */}
+              <div className="relative mx-auto aspect-[3/4] w-full max-w-[340px] overflow-hidden rounded-b-[18px] rounded-t-full bg-ink/10">
+                <Photo
+                  id={p.img()}
+                  alt={p.t}
+                  sizes="(min-width: 768px) 340px, 90vw"
+                  className="transition-transform duration-[1.4s] ease-[var(--ease-out-expo)] group-hover:scale-[1.06]"
+                />
               </div>
-            ))}
-          </RevealGroup>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* --------------------------------------------------------- Selected work -- */
-
-export function WorkRail() {
-  const section = useRef<HTMLElement>(null);
-  const track = useRef<HTMLDivElement>(null);
-  const hovering = useRef(false);
-
-  // Endless auto-scroll: the track drifts left, speeds up a touch with page
-  // scroll velocity and eases to a near stop while a card is hovered.
-  useEffect(() => {
-    const el = track.current;
-    if (!el || prefersReducedMotion()) return;
-    let x = 0;
-    let speed = 1;
-    let visible = true;
-    const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting), { rootMargin: "200px" });
-    io.observe(el);
-    const tick = (_t: number, dt: number) => {
-      if (!visible) return;
-      const target = hovering.current ? 0.06 : 1 + Math.min(Math.abs(scrollState.velocity) * 0.08, 3);
-      speed += (target - speed) * 0.06;
-      x -= speed * dt * 0.055;
-      const loopAt = (el.querySelector<HTMLElement>("[data-loop-start]")?.offsetLeft ?? 0) - el.offsetLeft;
-      if (loopAt > 0 && -x >= loopAt) x += loopAt;
-      el.style.transform = `translate3d(${x}px,0,0)`;
-    };
-    gsap.ticker.add(tick);
-    return () => {
-      gsap.ticker.remove(tick);
-      io.disconnect();
-    };
-  }, []);
-
-  const featured = projects.slice(0, 6);
-  const loop = [...featured, ...featured];
-
-  return (
-    <section ref={section} className="relative overflow-hidden bg-[#311414] py-28 text-bone md:py-36">
-      <div className="wrap mb-12 flex items-end justify-between gap-6 md:mb-16">
-        <SplitReveal className="display display-lg">Selected work</SplitReveal>
-        <TLink href="/projects" className="btn btn-ghost shrink-0">
-          All projects
-        </TLink>
-      </div>
-      <div
-        ref={track}
-        className="relative z-[2] flex w-max items-start gap-5 pl-[var(--gutter)] will-change-transform md:gap-8"
-        onMouseLeave={() => (hovering.current = false)}
-      >
-        {loop.map((p, i) => (
-          <div
-            key={`${p.slug}-${i}`}
-            data-loop-start={i === featured.length ? "" : undefined}
-            onMouseEnter={() => (hovering.current = true)}
-            className="w-[72vw] shrink-0 transition-[width] duration-[900ms] ease-[var(--ease-out-expo)] sm:w-[42vw] md:w-[26vw] md:hover:w-[38vw]"
-            aria-hidden={i >= featured.length || undefined}
-          >
-            <ProjectCard project={p} index={i % featured.length} aspect="h-[92vw] sm:h-[54vw] md:h-[min(62svh,34vw)]" />
-          </div>
-        ))}
+              <span className="mt-7 block text-[12px] tracking-[0.18em] text-ink/45">0{i + 1}</span>
+              <h3 className="display mt-3 text-[clamp(1.5rem,2.2vw,2.1rem)] leading-tight">{p.t}</h3>
+              <p className="mx-auto mt-3 max-w-[300px] text-[15px] leading-relaxed text-ink/60">{p.d}</p>
+            </article>
+          ))}
+        </RevealGroup>
       </div>
     </section>
   );
@@ -159,7 +129,7 @@ function ServiceCard({ s, i, className = "", style }: { s: (typeof services)[num
             {s.title}
           </span>
           <span className="mt-2 hidden text-[11.5px] leading-snug text-white/75 md:block">{s.short}</span>
-          <span className="mt-3 rounded-[3px] bg-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.16em] backdrop-blur">
+          <span className="mt-3 rounded-full bg-white/15 px-3 py-1 text-[10px] uppercase tracking-[0.16em] backdrop-blur">
             {s.index} · View
           </span>
         </div>
@@ -264,35 +234,97 @@ export { ProcessTimeline } from "./Process";
 
 /* ---------------------------------------------------------------- Journal -- */
 
+// Staggered card heights for the journal strip (cards align on the baseline).
+const JOURNAL_HEIGHTS = ["md:h-[58svh]", "md:h-[40svh]", "md:h-[50svh]", "md:h-[36svh]", "md:h-[46svh]"];
+
 export function JournalTeaser() {
+  const section = useRef<HTMLElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+
+  const hovering = useRef(false);
+
+  // Endless auto-scroll; eases to a near stop while a card is hovered.
+  useEffect(() => {
+    const el = track.current;
+    if (!el || prefersReducedMotion()) return;
+    let x = 0;
+    let speed = 1;
+    let visible = true;
+    const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting), { rootMargin: "200px" });
+    io.observe(el);
+    const tick = (_t: number, dt: number) => {
+      if (!visible) return;
+      const target = hovering.current ? 0.05 : 1;
+      speed += (target - speed) * 0.06;
+      x -= speed * dt * 0.045;
+      const loopAt = (el.querySelector<HTMLElement>("[data-loop-start]")?.offsetLeft ?? 0) - el.offsetLeft;
+      if (loopAt > 0 && -x >= loopAt) x += loopAt;
+      el.style.transform = `translate3d(${x}px,0,0)`;
+    };
+    gsap.ticker.add(tick);
+    return () => {
+      gsap.ticker.remove(tick);
+      io.disconnect();
+    };
+  }, []);
+
   return (
-    <section className="bg-bone pb-28 pt-20 text-ink md:pb-40 md:pt-28">
+    <section ref={section} className="overflow-hidden bg-bone pb-28 pt-24 text-ink md:pb-40 md:pt-32">
       <div className="wrap">
-        <div className="mb-12 flex items-end justify-between gap-6">
-          <SplitReveal className="display display-lg">Journal</SplitReveal>
-          <TLink href="/journal" className="btn btn-ghost shrink-0">
-            All articles
-          </TLink>
+        <div className="grid gap-8 md:grid-cols-12 md:items-end">
+          <div className="md:col-span-7">
+            <p className="eyebrow mb-5 text-ink/50">[ Journal ]</p>
+            <SplitReveal className="display display-lg">Notes from the studio</SplitReveal>
+          </div>
+          <div className="md:col-span-4 md:col-start-9">
+            <p className="max-w-[340px] text-[15px] leading-relaxed text-ink/60">
+              Essays, methods and material notes, written by the people who draw the rooms.
+            </p>
+            <TLink href="/journal" className="btn btn-ghost-ink mt-6">
+              All articles
+            </TLink>
+          </div>
         </div>
-        <RevealGroup className="grid gap-10 md:grid-cols-3 md:gap-6">
-          {posts.map((p, i) => (
-            <TLink key={p.slug} href={`/journal/${p.slug}`} data-reveal data-delay={i * 0.1} data-cursor="Read" className="group block">
-              <div className="relative aspect-[4/3] overflow-hidden rounded-[18px] bg-ink/10">
+      </div>
+
+      {/* Strip is clipped at the left margin and runs off the right edge of the screen */}
+      <div className="mt-16 pl-[var(--gutter)] md:mt-20">
+        <div className="overflow-hidden">
+        <div
+          ref={track}
+          className="flex w-max items-end gap-4 pr-4 will-change-transform md:gap-5 md:pr-5"
+          onMouseLeave={() => (hovering.current = false)}
+        >
+          {[...posts, ...posts].map((p, k) => {
+            const i = k % posts.length;
+            return (
+            <TLink
+              key={`${p.slug}-${k}`}
+              href={`/journal/${p.slug}`}
+              data-cursor="Read"
+              data-loop-start={k === posts.length ? "" : undefined}
+              aria-hidden={k >= posts.length || undefined}
+              tabIndex={k >= posts.length ? -1 : undefined}
+              onMouseEnter={() => (hovering.current = true)}
+              className="group block w-[78vw] shrink-0 sm:w-[46vw] md:w-[26vw]"
+            >
+              <div className={`relative h-[62vw] overflow-hidden rounded-[18px] bg-ink/10 sm:h-[38vw] ${JOURNAL_HEIGHTS[i % JOURNAL_HEIGHTS.length]}`}>
                 <Photo
                   id={p.image}
                   alt={p.title}
-                  sizes="(min-width: 768px) 33vw, 100vw"
+                  sizes="(min-width: 768px) 26vw, 78vw"
                   className="transition-transform duration-[1.4s] ease-[var(--ease-out-expo)] group-hover:scale-[1.06]"
                 />
               </div>
-              <p className="mt-5 text-[12.5px] uppercase tracking-[0.12em] text-ink/50">
-                {p.category} · {p.read}
+              <h3 className="display mt-5 max-w-[16ch] text-[clamp(1.35rem,1.9vw,1.85rem)] leading-[1.05]">{p.title}</h3>
+              <p className="mt-3 text-[12.5px] text-ink/50">
+                {p.category} <span className="mx-1.5">·</span> {p.date}
               </p>
-              <h3 className="display mt-2 text-[24px] leading-tight">{p.title}</h3>
-              <p className="mt-2 text-[14.5px] text-ink/60">{p.excerpt}</p>
             </TLink>
-          ))}
-        </RevealGroup>
+            );
+          })}
+        </div>
+        </div>
       </div>
     </section>
   );

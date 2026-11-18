@@ -85,20 +85,23 @@ export default function Article({ post }: { post: Post; next?: Post }) {
         <p className="mt-5 max-w-[520px] text-[13.5px] text-ink/50">{post.gallerycaption}</p>
       </section>
 
-      {/* Key takeaways */}
-      <section className="bg-cream py-24 md:py-32">
-        <div className="wrap">
-          <div className="mb-14 grid gap-6 md:grid-cols-12 md:items-end">
-            <SplitReveal className="display display-md md:col-span-6">Key takeaways</SplitReveal>
-            <p className="max-w-[380px] text-[15px] text-ink/60 md:col-span-4 md:col-start-9">
-              The short version, for anyone planning a home or a commercial space.
-            </p>
+      {/* Key takeaways: dark band, sticky heading beside a numbered list */}
+      <section className="bg-[#311414] py-24 text-bone md:py-32">
+        <div className="wrap grid gap-12 md:grid-cols-12">
+          <div className="md:col-span-4">
+            <div className="md:sticky md:top-32">
+              <p className="eyebrow text-white/45">[ In short ]</p>
+              <SplitReveal className="display display-md mt-5">Key takeaways</SplitReveal>
+              <p className="mt-5 max-w-[300px] text-[15px] leading-relaxed text-white/55">
+                The short version, for anyone planning a home or a commercial space.
+              </p>
+            </div>
           </div>
-          <RevealGroup className="grid gap-4 md:grid-cols-3 md:gap-6">
+          <RevealGroup className="border-t border-white/12 md:col-span-8">
             {post.takeaways.map((t, i) => (
-              <div key={i} data-reveal data-delay={i * 0.08} className="flex min-h-[220px] flex-col justify-between rounded-[18px] bg-bone p-7">
-                <span className="display text-[44px] leading-none text-terracotta">0{i + 1}</span>
-                <p className="mt-8 text-[17px] leading-snug">{t}</p>
+              <div key={i} data-reveal data-delay={i * 0.08} className="grid grid-cols-[auto_1fr] items-baseline gap-6 border-b border-white/12 py-8 md:gap-10 md:py-10">
+                <span className="display text-[clamp(2.4rem,4vw,3.6rem)] leading-none text-terracotta">0{i + 1}</span>
+                <p className="display text-[clamp(1.25rem,2vw,1.9rem)] leading-[1.15]">{t}</p>
               </div>
             ))}
           </RevealGroup>

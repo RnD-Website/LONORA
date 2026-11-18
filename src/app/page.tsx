@@ -1,11 +1,11 @@
 import Journey from "@/components/home/Journey";
 import { VideoReveal } from "@/components/home/VideoReveal";
+import { WorkShowcase } from "@/components/home/WorkShowcase";
 import {
   JournalTeaser,
   Manifesto,
   ProcessTimeline,
   ServicesList,
-  WorkRail,
 } from "@/components/home/Sections";
 
 export default function Home() {
@@ -13,7 +13,7 @@ export default function Home() {
     <>
       <Journey />
       <Manifesto />
-      <WorkRail />
+      <WorkShowcase />
       <ServicesList />
       <ProcessTimeline />
       <VideoReveal />

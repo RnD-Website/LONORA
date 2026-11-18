@@ -11,7 +11,7 @@ import { Photo } from "../Photo";
 function SketchStair({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 220 300" fill="none" className={className} aria-hidden>
-      <g stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" data-draw>
+      <g stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" data-loop-draw>
         <path d="M20 290 L20 40 L70 10" />
         <path d="M20 290 L120 230 L120 60 L70 10" />
         <path d="M120 230 L200 280" />
@@ -29,7 +29,7 @@ function SketchStair({ className = "" }: { className?: string }) {
 function SketchPlan({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 260 200" fill="none" className={className} aria-hidden>
-      <g stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" data-draw>
+      <g stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" data-loop-draw>
         <path d="M60 20 L120 20 L120 70 L200 70 L200 120 L150 120 L150 170 L90 170 L90 120 L20 120 L20 70 L60 70 Z" />
         <path d="M60 20 L60 70 M120 70 L120 120 M90 120 L150 120" />
         <path d="M30 150 L240 60" />
@@ -110,7 +110,7 @@ function Panel({ i, mobile = false }: { i: number; mobile?: boolean }) {
         <PanelVisual i={i} />
       </div>
       <footer>
-        <span className={`text-[11px] uppercase tracking-[0.14em] ${light ? "text-terracotta" : "text-white/55"}`}>{p.duration}</span>
+        <span className={`text-[11px] uppercase tracking-[0.14em] text-terracotta`}>{p.duration}</span>
         <p className={`mt-2 max-w-[340px] text-[14px] leading-relaxed ${light ? "text-ink/65" : "text-white/65"}`}>{p.text}</p>
       </footer>
     </article>
