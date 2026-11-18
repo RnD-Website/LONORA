@@ -118,7 +118,7 @@ export default function ServicesView() {
                     ))}
                   </ul>
                   <div data-reveal className="mt-8">
-                    <TLink href="/contact" className="btn btn-ghost-ink">
+                    <TLink href="/contact" className="btn btn-dark">
                       Enquire about {s.title.toLowerCase()}
                     </TLink>
                   </div>
