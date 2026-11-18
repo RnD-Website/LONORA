@@ -857,13 +857,13 @@ export default function DesignView() {
               The composer is a starting point. Our architects measure your home, test the plan and refine every detail with you.
             </p>
           </div>
-          <RevealGroup className="mt-14 grid gap-px overflow-hidden rounded-[22px] bg-white/10 md:grid-cols-3">
+          <RevealGroup className="mt-14 grid gap-4 md:grid-cols-3">
             {[
               ["Compose", "Plan your rooms, place the furniture and choose the materials and light that feel like you."],
               ["Send", "Share it with the studio. It arrives with every room, its palette and an indicative budget."],
               ["Develop", "We survey, draw and render it properly, then return a full design with a fixed proposal."],
             ].map(([t, d], i) => (
-              <div key={t} data-reveal data-delay={i * 0.08} className="bg-[#311414] p-8 md:p-10">
+              <div key={t} data-reveal data-delay={i * 0.08} className="rounded-[22px] bg-white/[0.05] p-8 md:p-10">
                 <span className="display text-[44px] leading-none text-terracotta">0{i + 1}</span>
                 <p className="display mt-6 text-[26px] leading-none">{t}</p>
                 <p className="mt-4 max-w-[320px] text-[14.5px] leading-relaxed text-white/60">{d}</p>
