@@ -38,7 +38,7 @@ function Hero({ p, index }: { p: Project; index: number }) {
   ];
 
   return (
-    <section ref={root} className="relative h-[100svh] min-h-[620px] overflow-hidden text-bone">
+    <section ref={root} data-tone="dark" className="relative h-[100svh] min-h-[620px] overflow-hidden text-bone">
       <div data-hero-img className="absolute inset-0 will-change-transform">
         <Photo id={p.images[0]} alt={`${p.title}, ${p.type.toLowerCase()} in ${p.location}`} priority />
       </div>
@@ -55,9 +55,6 @@ function Hero({ p, index }: { p: Project; index: number }) {
               {p.title}
             </SplitReveal>
           </div>
-          <p className="max-w-[360px] text-[17px] leading-snug text-white/85 md:col-span-4 md:col-start-9 md:pb-3">
-            {p.tagline}.
-          </p>
         </div>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-white/20 py-6 md:grid-cols-4">
           {facts.map(([k, v]) => (

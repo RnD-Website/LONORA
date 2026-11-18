@@ -193,7 +193,7 @@ export const projects: Project[] = [
       ambient: "#EDE6DA",
       floorGloss: 0.7,
     },
-    images: ["1769107805412-90d9191d53e9", "1788953324777-3d98984c0fa0", "1782834294716-8e28c18bdba6", "1769107805465-bfd41863f1a0", "1764512680324-048f158cab2b", "1782834294705-88a8559c2109", "1771775529036-2a9dc65ca54b"],
+    images: ["/images/atelier-noor.jpg", "1788953324777-3d98984c0fa0", "1782834294716-8e28c18bdba6", "1769107805465-bfd41863f1a0", "1764512680324-048f158cab2b", "1782834294705-88a8559c2109", "1771775529036-2a9dc65ca54b"],
     status: "Completed",
     client: "Fashion house",
     team: ["Interior architecture: LONORA", "Lighting design: LONORA", "3D visualisation: LONORA", "Main contractor: to be confirmed"],

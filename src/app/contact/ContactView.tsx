@@ -38,7 +38,7 @@ export default function ContactView() {
   }
 
   const field =
-    "w-full border-0 border-b border-white/20 bg-transparent py-3 text-[16px] text-bone placeholder:text-white/35 focus:border-terracotta focus:outline-none transition-colors";
+    "w-full rounded-full border border-white/15 bg-white/[0.04] px-5 py-3.5 text-[15.5px] text-bone placeholder:text-white/40 focus:border-terracotta focus:outline-none transition-colors";
 
   return (
     <>
@@ -105,19 +105,13 @@ export default function ContactView() {
               <form
                 onSubmit={onSubmit}
                 noValidate={false}
-                className="relative isolate space-y-8 overflow-hidden rounded-[26px] bg-[#311414] p-7 shadow-[0_40px_90px_-40px_rgba(255,99,37,0.35)] ring-1 ring-inset ring-white/10 md:p-10"
+                className="relative space-y-8 overflow-hidden rounded-[26px] bg-[#311414] p-7 md:p-10"
               >
-                {/* Warm accent glow and header so the form reads as the focus of the page */}
-                <span aria-hidden className="pointer-events-none absolute -right-24 -top-24 -z-10 h-64 w-64 rounded-full bg-terracotta/25 blur-3xl" />
-                <div className="relative flex items-center justify-between gap-4 border-b border-white/10 pb-6">
+                <div className="relative">
                   <div>
                     <p className="display text-[clamp(1.5rem,2.2vw,2rem)] leading-none">Start a project</p>
                     <p className="mt-2 text-[13.5px] text-white/55">Takes about two minutes. We reply within two working days.</p>
                   </div>
-                  <span className="hidden shrink-0 items-center gap-2 rounded-full bg-terracotta/15 px-3 py-1.5 text-[11.5px] uppercase tracking-[0.14em] text-terracotta sm:flex">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-terracotta" />
-                    Booking now
-                  </span>
                 </div>
                 <fieldset className="relative">
                   <legend className="eyebrow mb-4 text-white/50">I&apos;m interested in</legend>
@@ -139,7 +133,7 @@ export default function ContactView() {
                     ))}
                   </div>
                 </fieldset>
-                <div className="grid gap-8 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
                     <span className="sr-only">Name</span>
                     <input name="name" required autoComplete="name" placeholder="Your name *" className={field} />
@@ -177,7 +171,7 @@ export default function ContactView() {
                     required
                     rows={4}
                     placeholder="Tell us about the space, timing and what you would like to change *"
-                    className={`${field} resize-none`}
+                    className={`${field} resize-none !rounded-[22px]`}
                   />
                 </label>
                 {/* honeypot */}

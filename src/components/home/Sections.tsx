@@ -250,28 +250,90 @@ export function JournalTeaser() {
 
   const hovering = useRef(false);
 
-  // Endless auto-scroll; eases to a near stop while a card is hovered.
+  // Endless auto-scroll that eases to a near stop while a card is hovered.
+  // The strip can also be dragged sideways with the mouse or a finger.
   useEffect(() => {
     const el = track.current;
-    if (!el || prefersReducedMotion()) return;
+    const area = el?.parentElement;
+    if (!el || !area) return;
+    const reduced = prefersReducedMotion();
     let x = 0;
     let speed = 1;
     let visible = true;
+    let dragging = false;
+    let lastX = 0;
+    let moved = 0;
+    let fling = 0;
     const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting), { rootMargin: "200px" });
     io.observe(el);
+
+    const wrap = () => {
+      const loopAt = (el.querySelector<HTMLElement>("[data-loop-start]")?.offsetLeft ?? 0) - el.offsetLeft;
+      if (loopAt <= 0) return;
+      while (-x >= loopAt) x += loopAt;
+      while (x > 0) x -= loopAt;
+    };
     const tick = (_t: number, dt: number) => {
       if (!visible) return;
-      const target = hovering.current ? 0.05 : 1;
-      speed += (target - speed) * 0.06;
-      x -= speed * dt * 0.045;
-      const loopAt = (el.querySelector<HTMLElement>("[data-loop-start]")?.offsetLeft ?? 0) - el.offsetLeft;
-      if (loopAt > 0 && -x >= loopAt) x += loopAt;
+      if (!dragging) {
+        const target = reduced || hovering.current ? 0 : 1;
+        speed += (target - speed) * 0.06;
+        x -= speed * dt * 0.045;
+        x += fling;
+        fling *= 0.93;
+        if (Math.abs(fling) < 0.05) fling = 0;
+      }
+      wrap();
       el.style.transform = `translate3d(${x}px,0,0)`;
     };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = 0;
+      fling = 0;
+      lastX = e.clientX;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      moved += Math.abs(dx);
+      x += dx;
+      fling = dx;
+      if (moved > 6) area.classList.add("is-dragging");
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      area.classList.remove("is-dragging");
+    };
+    // A drag should not count as a click on the card underneath.
+    const onClick = (e: MouseEvent) => {
+      if (moved > 6) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      moved = 0;
+    };
+    const noNativeDrag = (e: DragEvent) => e.preventDefault();
+
+    area.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    area.addEventListener("click", onClick, true);
+    area.addEventListener("dragstart", noNativeDrag);
     gsap.ticker.add(tick);
     return () => {
       gsap.ticker.remove(tick);
       io.disconnect();
+      area.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      area.removeEventListener("click", onClick, true);
+      area.removeEventListener("dragstart", noNativeDrag);
     };
   }, []);
 
@@ -296,7 +358,7 @@ export function JournalTeaser() {
 
       {/* Strip is clipped at the left margin and runs off the right edge of the screen */}
       <div className="mt-16 pl-[var(--gutter)] md:mt-20">
-        <div className="overflow-hidden">
+        <div className="cursor-grab select-none overflow-hidden [touch-action:pan-y] [&.is-dragging]:cursor-grabbing [&.is-dragging_a]:pointer-events-none">
         <div
           ref={track}
           className="flex w-max items-end gap-4 pr-4 will-change-transform md:gap-5 md:pr-5"

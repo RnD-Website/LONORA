@@ -52,6 +52,12 @@ export default function Header() {
         const stack = document.elementsFromPoint(x, y).filter((el) => !header.contains(el));
         let lum: number | null = null;
         for (const el of stack) {
+          // Sections can declare their tone explicitly (e.g. photo heroes).
+          const tone = el.closest<HTMLElement>("[data-tone]")?.dataset.tone;
+          if (tone) {
+            lum = tone === "light" ? 1 : 0;
+            break;
+          }
           if (/^(IMG|VIDEO|CANVAS)$/.test(el.tagName)) {
             lum = 0.3; // photos and film read as dark
             break;
