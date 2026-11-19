@@ -247,6 +247,7 @@ export default function DesignView() {
   const [viewNonce, setViewNonce] = useState(0);
   const [mood, setMood] = useState<string | null>("warm-minimal");
   const [adding, setAdding] = useState(false);
+  const [full, setFull] = useState(false); // dedicated full-page view of the composer
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const loaded = useRef(false);
 
@@ -413,6 +414,24 @@ export default function DesignView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selected, remove]);
 
+  // Full-page view: freeze the page behind it and let Escape bring you back.
+  useEffect(() => {
+    if (!full) return;
+    const lenis = (window as unknown as { __lenis?: { stop: () => void; start: () => void } }).__lenis;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    lenis?.stop();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !(e.target as HTMLElement)?.closest("input")) setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      lenis?.start();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [full]);
+
   /* -------------------------------------------------------- Derived -- */
 
   const price = useMemo(() => quote(project), [project]);
@@ -436,8 +455,7 @@ export default function DesignView() {
   }, [project]);
 
   const groups = room.type === "kitchen" ? GROUPS : [...GROUPS.slice(1), GROUPS[0]];
-  const full = project.rooms.length >= MAX_ROOMS;
-  const evening = project.light === "evening" && !drawing;
+  const floorFull = project.rooms.length >= MAX_ROOMS;
 
   return (
     <div className="bg-[#471F1F] text-bone">
@@ -503,7 +521,13 @@ export default function DesignView() {
 
       {/* Composer */}
       <section className="wrap pb-24 md:pb-32">
-        <div className="relative grid overflow-hidden rounded-[22px] border border-white/10 bg-white text-ink md:h-[min(calc(100svh-110px),880px)] md:min-h-[660px] md:grid-cols-[350px_1fr]">
+        <div
+          className={
+            full
+              ? "fixed inset-0 z-[100] grid overflow-y-auto bg-white text-ink md:grid-cols-[350px_1fr] md:overflow-hidden"
+              : "relative grid overflow-hidden rounded-[22px] border border-white/10 bg-white text-ink md:h-[min(calc(100svh-110px),880px)] md:min-h-[660px] md:grid-cols-[350px_1fr]"
+          }
+        >
           <aside className="order-2 flex min-h-0 flex-col border-t border-ink/10 bg-bone/60 md:order-1 md:border-r md:border-t-0">
             {sel && selRoom ? (
               <SelectedPanel
@@ -579,13 +603,13 @@ export default function DesignView() {
                           })}
                         </ul>
                         <div className="mt-3">
-                          <p className="mb-2 text-[11.5px] text-ink/50">{full ? "Your floor is full. Remove a room to add another." : "Add a room"}</p>
+                          <p className="mb-2 text-[11.5px] text-ink/50">{floorFull ? "Your floor is full. Remove a room to add another." : "Add a room"}</p>
                           <div className="grid grid-cols-4 gap-2">
                             {ROOM_TYPES.map((t) => (
                               <button
                                 key={t.id}
                                 type="button"
-                                disabled={full}
+                                disabled={floorFull}
                                 onClick={() => addRoom(t.id)}
                                 className="flex flex-col items-center gap-1 rounded-[12px] border border-dashed border-ink/20 bg-white/60 px-1 py-2.5 text-ink/65 transition-colors hover:border-terracotta hover:text-ink disabled:pointer-events-none disabled:opacity-35"
                               >
@@ -739,7 +763,7 @@ export default function DesignView() {
           </aside>
 
           {/* 3D */}
-          <div data-lenis-prevent className="relative order-1 h-[64svh] min-h-[460px] md:order-2 md:h-auto">
+          <div data-lenis-prevent className={`relative order-1 min-h-[460px] md:order-2 md:h-auto ${full ? "h-[70svh]" : "h-[64svh]"}`}>
             <Planner3D
               rooms={sceneRooms}
               focus={focus ? room.id : null}
@@ -778,7 +802,7 @@ export default function DesignView() {
                     {r.name}
                   </button>
                 ))}
-                {!full && (
+                {!floorFull && (
                   <button
                     type="button"
                     onClick={() => setAdding((v) => !v)}
@@ -791,7 +815,7 @@ export default function DesignView() {
                 )}
               </div>
             </div>
-            {adding && !full && (
+            {adding && !floorFull && (
               <div className="absolute left-1/2 top-[62px] z-10 flex -translate-x-1/2 gap-1 rounded-[16px] border border-ink/10 bg-white p-1.5 shadow-xl">
                 {ROOM_TYPES.map((t) => (
                   <button
@@ -838,12 +862,31 @@ export default function DesignView() {
               </button>
             </div>
 
-            <p className={`pointer-events-none absolute bottom-4 left-4 hidden text-[11.5px] md:block ${evening ? "text-white/50" : "text-ink/45"}`}>
-              {focus ? "Drag furniture to move it · Drag the room to orbit · Scroll to zoom" : "Click a room's label to open it · Drag furniture to move it · Scroll to zoom"}
-            </p>
-            <span className={`pointer-events-none absolute bottom-4 right-4 font-[family-name:var(--font-display)] text-[15px] tracking-[0.12em] ${evening ? "text-white/55" : "text-ink/50"}`}>
-              LONORA
-            </span>
+            {/* Full view: open the composer as its own full page */}
+            {full ? (
+              <button
+                type="button"
+                onClick={() => setFull(false)}
+                className="absolute left-3 top-4 flex h-10 items-center gap-2 rounded-full bg-ink/90 pl-3 pr-4 text-[13px] text-bone shadow-lg backdrop-blur transition-colors hover:bg-ink md:left-4"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Back
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setFull(true)}
+                aria-label="Open full view"
+                title="Full view"
+                className="absolute bottom-4 right-4 flex h-11 w-11 items-center justify-center rounded-full border border-ink/10 bg-white/90 text-ink shadow-md backdrop-blur transition-colors hover:bg-ink hover:text-bone"
+              >
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </section>

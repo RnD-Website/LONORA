@@ -76,7 +76,7 @@ export default function StudioView() {
     () => {
       if (prefersReducedMotion()) return;
       // Endless auto-slide: the strip holds two copies, so moving it by half loops seamlessly.
-      gsap.to("[data-strip]", { xPercent: -50, duration: 60, ease: "none", repeat: -1 });
+      gsap.to("[data-strip]", { xPercent: -50, duration: 32, ease: "none", repeat: -1 });
       gsap.utils.toArray<HTMLElement>("[data-member]").forEach((el, i) => {
         gsap.from(el, {
           y: 60,
@@ -161,20 +161,25 @@ export default function StudioView() {
 
           <div className="mt-20 grid grid-cols-2 gap-x-4 gap-y-10 md:mt-28 md:grid-cols-6 md:gap-x-6 md:gap-y-14">
             {team.map((m, i) => (
-              <figure key={i} data-member className={`${TEAM_COLS[i % TEAM_COLS.length]} md:col-span-1`}>
-                <div className="aspect-[5/6] overflow-hidden rounded-[14px] bg-white/5">
-                  {/* One shared warm grade so stock portraits read as a single studio shoot. */}
-                  <Photo
-                    id={m.photo}
-                    alt={`${m.role} at LONORA`}
-                    sizes="(min-width: 768px) 16vw, 45vw"
-                    className="[filter:grayscale(.4)_sepia(.25)_contrast(1.04)_brightness(.94)]"
-                  />
+              <figure key={i} data-member className={`group ${TEAM_COLS[i % TEAM_COLS.length]} md:col-span-1`}>
+                {/* Hover: the card lifts, the portrait warms to full colour and eases in */}
+                <div className="transition-transform duration-700 ease-[var(--ease-out-expo)] group-hover:-translate-y-2">
+                  <div className="relative aspect-[5/6] overflow-hidden rounded-[14px] bg-white/5 shadow-[0_0_0_rgba(0,0,0,0)] transition-shadow duration-700 group-hover:shadow-[0_24px_50px_-20px_rgba(0,0,0,0.6)]">
+                    {/* One shared warm grade so stock portraits read as a single studio shoot. */}
+                    <Photo
+                      id={m.photo}
+                      alt={`${m.role} at LONORA`}
+                      sizes="(min-width: 768px) 16vw, 45vw"
+                      className="[filter:grayscale(.4)_sepia(.25)_contrast(1.04)_brightness(.94)] transition-[transform,filter] duration-[1.1s] ease-[var(--ease-out-expo)] group-hover:scale-[1.07] group-hover:[filter:grayscale(0)_sepia(0)_contrast(1)_brightness(1)]"
+                    />
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity duration-700 group-hover:opacity-100" />
+                  </div>
+                  <figcaption className="mt-3">
+                    <p className="text-[12px] font-medium uppercase tracking-[0.08em]">{m.name}</p>
+                    <span className="mt-1.5 block h-px w-0 bg-terracotta transition-[width] duration-700 ease-[var(--ease-out-expo)] group-hover:w-10" />
+                    <p className="mt-1.5 text-[10.5px] uppercase leading-snug tracking-[0.1em] text-white/40 transition-colors duration-500 group-hover:text-white/70">{m.role}</p>
+                  </figcaption>
                 </div>
-                <figcaption className="mt-3">
-                  <p className="text-[12px] font-medium uppercase tracking-[0.08em]">{m.name}</p>
-                  <p className="mt-1 text-[10.5px] uppercase leading-snug tracking-[0.1em] text-white/40">{m.role}</p>
-                </figcaption>
               </figure>
             ))}
           </div>
