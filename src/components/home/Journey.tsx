@@ -1,24 +1,24 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { chapters } from "@/lib/content";
 import { gsap, ScrollTrigger, useGSAP, scrollState } from "@/lib/gsap";
 import { TLink } from "../Transition";
 
-const HomeScene = dynamic(() => import("../three/HomeScene"), { ssr: false });
+import HeroVideo from "./HeroVideo";
 
 /**
- * The signature experience: a pinned, full-screen WebGL walk through a
- * LONORA interior. Scroll drives the camera; glass cards narrate each room.
+ * The signature experience: a pinned, full-screen film that walks from the
+ * street into a LONORA interior. Scroll drives the playhead in both
+ * directions; glass cards narrate each chapter.
  */
 export default function Journey() {
   const section = useRef<HTMLElement>(null);
   const hero = useRef<HTMLDivElement>(null);
+  const shade = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const [showCard, setShowCard] = useState(false);
-  const [sample, setSample] = useState<string | null>(null);
 
   useGSAP(
     () => {
@@ -39,6 +39,13 @@ export default function Journey() {
       gsap.to(hero.current, {
         opacity: 0,
         y: -60,
+        ease: "none",
+        scrollTrigger: { trigger: section.current, start: "top top", end: "6% top", scrub: true },
+      });
+
+      // The hero's soft shade leaves with the copy.
+      gsap.to(shade.current, {
+        opacity: 0,
         ease: "none",
         scrollTrigger: { trigger: section.current, start: "top top", end: "6% top", scrub: true },
       });
@@ -76,24 +83,24 @@ export default function Journey() {
     gsap.to(card.current, { autoAlpha: showCard ? 1 : 0, y: showCard ? 0 : 30, duration: 0.8, ease: "expo.out" });
   }, [showCard]);
 
-  // Material sample hover label (set by the 3D atelier).
-  useEffect(() => {
-    const obs = new MutationObserver(() => setSample(document.body.dataset.sample ?? null));
-    obs.observe(document.body, { attributes: true, attributeFilter: ["data-sample"] });
-    return () => obs.disconnect();
-  }, []);
-
   const ch = chapters[active];
 
   return (
     <section ref={section} className="relative" style={{ height: `${chapters.length * 110 + 40}vh` }} aria-label="A walk through a LONORA interior">
       <div className="sticky top-0 h-[100svh] w-full overflow-hidden bg-espresso">
-        <div className="absolute inset-0">
-          <HomeScene />
+        {/* Scroll-scrubbed film: plays forward on scroll down, reverses on scroll up */}
+        <div className="pointer-events-none absolute inset-0">
+          <HeroVideo />
         </div>
 
         {/* readability gradient */}
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(12,9,7,0.45)_0%,rgba(12,9,7,0)_28%,rgba(12,9,7,0)_55%,rgba(12,9,7,0.6)_100%)]" />
+
+        {/* Hero shade: a warm gradient behind the opening copy (first view only) */}
+        <div
+          ref={shade}
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_0%_100%,rgba(23,17,13,0.82)_0%,rgba(23,17,13,0.55)_35%,rgba(23,17,13,0)_70%)]"
+        />
 
         {/* Hero */}
         <div ref={hero} className="pointer-events-none absolute inset-x-0 bottom-0 wrap pb-10 md:pb-14">
@@ -127,24 +134,12 @@ export default function Journey() {
               </div>
             </div>
           </div>
-          <div className="glass pointer-events-auto absolute bottom-14 right-[var(--gutter)] hidden gap-8 rounded-2xl px-6 py-4 text-[12.5px] lg:flex">
-            {[
-              ["Practice", "Interior architecture"],
-              ["Sectors", "Residential · Commercial"],
-              ["Also", "3D visualisation"],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <p className="text-white/45">{k}</p>
-                <p className="text-white">{v}</p>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Chapter card */}
         <div
           ref={card}
-          className="glass invisible absolute bottom-6 left-4 right-4 rounded-2xl p-5 text-bone opacity-0 md:bottom-auto md:left-auto md:right-[var(--gutter)] md:top-1/2 md:w-[380px] md:-translate-y-1/2 md:p-6"
+          className="glass invisible absolute bottom-6 left-4 right-4 rounded-2xl p-5 text-bone opacity-0 md:bottom-0 md:left-auto md:right-[var(--gutter)] md:top-0 md:my-auto md:h-fit md:w-[380px] md:p-6"
         >
           <p data-card-in className="text-[12.5px] text-white/55">
             {ch.index} / {String(chapters.length).padStart(2, "0")}
@@ -164,10 +159,7 @@ export default function Journey() {
             ))}
           </div>
           {active === chapters.length - 1 && (
-            <div data-card-in className="mt-5 flex items-center justify-between gap-3">
-              <span className="font-[family-name:var(--font-hand)] text-[22px] text-terracotta">
-                {sample ? sample : "hover the samples"}
-              </span>
+            <div data-card-in className="mt-5 flex items-center justify-end gap-3">
               <TLink href="/projects" className="btn btn-solid h-10 text-[13px]">
                 See the work
               </TLink>
